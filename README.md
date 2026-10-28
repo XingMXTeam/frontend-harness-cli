@@ -271,6 +271,27 @@ screenshot-checked red line must cite a real PNG. Playwright, pixelmatch
 and pngjs are **optional peer dependencies** — not installed, the
 commands say exactly what to install.
 
+## Data-spec conformance: the data dimension gets a reference (v0.6)
+
+A scanner that only reads code can check hygiene — hardcoded secrets,
+plain-http URLs, un-namespaced storage keys — but it cannot check the
+thing that actually breaks at runtime: whether the code's view of the
+data matches the contract. Point `inputs.dataSpec` in `gate.config.json`
+at a contract file:
+
+```json
+{ "interfaces": [{ "name": "Campaign",
+  "fields": { "id": "string", "startsAt": "date", "tags": "array" } }] }
+```
+
+and `harness scan` diffs the matching TypeScript `interface`/`type`
+declarations against it, field by field: a spec field missing from the
+code deducts 8, a type that disagrees (string vs date) deducts 6, a
+field the code declares but the spec does not deducts 6. No spec input,
+no change — zero-config scans behave exactly as before. A spec that
+cannot be loaded, or a codebase with no type declarations at all,
+reports *neutral*: unverified never poses as verified.
+
 ## Honest boundaries (v0.5)
 
 - The kernel orchestrates and evaluates; it never calls an LLM.
@@ -297,7 +318,7 @@ commands say exactly what to install.
 ## Development
 
 ```bash
-npm test        # 72 tests: the v0.1 kernel set (coverage gate, veto, pitfall,
+npm test        # 76 tests: the v0.1 kernel set (coverage gate, veto, pitfall,
                 # judge evidence, resume, SHA verification, budget pause, full
                 # loop to done) + v0.2 unification (scan-score equivalence with
                 # the original ai-code-gate CLI, scan rubric items, skills-pack
@@ -309,6 +330,8 @@ npm test        # 72 tests: the v0.1 kernel set (coverage gate, veto, pitfall,
                 # packets and isolation tripwire, role guard, evidence
                 # freshness and artifacts, layered scoring, refinement →
                 # replan, capture/visual, the notice-list example replay)
+                # + v0.6 data-spec conformance (field diff pass/deductions,
+                # neutral on unloadable spec or missing declarations)
 ```
 
 MIT License.

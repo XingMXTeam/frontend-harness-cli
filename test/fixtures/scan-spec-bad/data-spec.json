@@ -1,0 +1,15 @@
+{
+  "interfaces": [
+    {
+      "name": "Campaign",
+      "fields": {
+        "id": "string",
+        "title": "string",
+        "startsAt": "date",
+        "budget": "number",
+        "tags": "array",
+        "active": "boolean"
+      }
+    }
+  ]
+}

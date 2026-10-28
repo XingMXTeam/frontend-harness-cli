@@ -111,6 +111,7 @@ export const DEFAULT_CONFIG = {
   // e2e tests actually ran — those verdicts need these artifacts.
   inputs: {
     plan: null, // plan markdown: FP ids (logic coverage) are read from it
+    dataSpec: null, // data contract (.json: { interfaces: [{ name, fields }] }) — code type declarations are diffed against it
     designTokens: null, // tokens file (.json with "--name" keys, or .css with --var declarations)
     i18n: null, // { resources: ["path/to/locale.json", ...], callPattern?: regex source }
     testResults: null, // test-runner report: {passed, failed} | Jest/Vitest JSON | Playwright JSON

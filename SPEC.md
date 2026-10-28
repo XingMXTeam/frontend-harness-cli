@@ -139,6 +139,18 @@ v1.0, not a launch-day claim.
 
 ## Changelog
 
+- v0.6.0 — the scan data dimension gains a reference artifact: with
+  `inputs.dataSpec` pointing at a contract JSON
+  (`{ interfaces: [{ name, fields }] }`), TypeScript interface/type
+  declarations in the code are diffed against the spec field by field —
+  a spec field missing in code deducts 8, a recognized type mismatch 6,
+  a code field the spec does not declare 6. No spec input means the
+  dimension behaves exactly as before (the ai-code-gate equivalence
+  fixtures pin this); an unloadable spec, or a codebase with no type
+  declarations at all, reports neutral instead of silently passing.
+  This is deliberately the first dimension to move from reference-free
+  hygiene checks to contract comparison; structure and e2e still do
+  not execute builds or test suites inside `scan`.
 - v0.5.0 — the agent layer.
   - Roles: `templates/claude-code/agents/{planner,developer,evaluator}.md`
     installed to `.claude/agents/` (claude-code) or `.harness/agents/`

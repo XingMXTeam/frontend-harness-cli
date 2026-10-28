@@ -62,12 +62,13 @@ node bin/harness.js eval checkout
 node bin/harness.js report checkout
 npm run demo     # 端到端演示，含一次模拟中途中断后的续跑
 npm run example  # examples/notice-list：真实功能走完 失败 → replan → 修复 → 通过 → done
-npm test         # 72 个测试：v0.1 内核全套（覆盖门禁/否决/pitfall/judge 证据/续跑/SHA/预算停机/全流程）
+npm test         # 76 个测试：v0.1 内核全套（覆盖门禁/否决/pitfall/judge 证据/续跑/SHA/预算停机/全流程）
                # + v0.2 统一（scan 分数等价/scan 条目/技能包装语义）
                # + v0.3（vision 锚点与豁免/e2e 六类配额/verify-zone/scope/scan 历史/skills 自评计分）
                # + v0.4 run 驱动（无人值守跑到 done/驱动重启续跑/澄清需人停机/Agent 失败与停滞检测）
                # + v0.5 Agent 层（角色 packet 与隔离绊线/角色守卫/证据新鲜度与引用/分层计分/
                #   改进建议 → replan/capture 与 visual/notice-list 示例重放）
+               # + v0.6 数据契约对照（字段 diff 通过/扣分、spec 不可加载或无类型声明时中立）
 ```
 
 ## v0.3 补齐：品质锚定、治理接线、分母与自评
@@ -155,6 +156,23 @@ v0.4 能驱动循环；v0.5 讲清楚每一步谁来做、能看到什么、以�
   用 pixelmatch 与 `.harness/baselines/` 比对；没有基线报 `no-baseline`
   （退出码 2），不算通过。锚定在截图类红线上的 judge 条目必须引用真实 PNG。
   Playwright、pixelmatch、pngjs 是**可选 peer 依赖**——没装时命令会准确告诉你装什么。
+
+## 数据契约对照：数据维有了参照物（v0.6）
+
+只读代码的扫描器只能查卫生习惯——硬编码密钥、明文 http、storage key
+没命名空间——查不了真正会在线上炸的东西：代码眼里的数据跟契约对不
+对得上。把 `gate.config.json` 的 `inputs.dataSpec` 指向一份契约文件：
+
+```json
+{ "interfaces": [{ "name": "Campaign",
+  "fields": { "id": "string", "startsAt": "date", "tags": "array" } }] }
+```
+
+`harness scan` 就会把代码里同名的 TypeScript `interface`/`type` 声明
+跟它逐字段对照：契约有、代码没建模的字段扣 8，类型对不上（如 string
+vs date）扣 6，代码声明了契约里没有的字段扣 6。不给 spec 输入则行为
+与从前完全一致，零配置扫描不受影响。spec 加载失败、或代码里根本没
+有类型声明时，报中立（neutral）：未验证绝不冒充已验证。
 
 ## 诚实边界（v0.5）
 

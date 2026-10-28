@@ -1,7 +1,12 @@
 // Data dimension: hardcoded credentials, plain-http endpoints, storage
-// key namespaces, i18n completeness. Secrets and patterns are matched
-// on the masked code view; URLs are matched on literal contents (that
-// is where URLs live) so prose in comments can no longer fabricate one.
+// key namespaces, i18n completeness, and — when a data spec is provided
+// as an input — a field-level diff between the spec's interfaces and
+// the TypeScript declarations in the code. Secrets and patterns are
+// matched on the masked code view; URLs are matched on literal contents
+// (that is where URLs live) so prose in comments can no longer fabricate
+// one. The spec diff is a frontend-harness-cli extension: the vendored
+// ai-code-gate engine had no contract artifact to compare against, so
+// its data dimension could only check hygiene, never conformance.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -117,12 +122,206 @@ function i18nChecks(files, ctx) {
   }
 }
 
+// ─── Data-spec conformance ─────────────────────────────────────────────
+// The spec is the contract artifact: { interfaces: [{ name, fields }] },
+// where `fields` is either a name→type map ({ "id": "string" }) or a
+// plain list of names. Code-side, `interface Name { … }` and
+// `type Name = { … }` declarations are extracted from the masked code
+// view (strings/comments are already blanked there, so brace matching
+// is safe) and diffed field by field:
+//   spec field missing in code    → the contract promises data the
+//                                   frontend never models (8 pts)
+//   code field absent from spec   → drift: a stale spec, or a field the
+//                                   code invented (6 pts)
+//   recognized types disagree     → silent runtime breakage (6 pts)
+// Without a spec input there is nothing to diff against and the check
+// stays silent (zero-config scans are unaffected). A spec that cannot
+// be loaded, or a codebase with no declarations at all, reports
+// neutral — unverified must never look verified.
+
+// Reduce a declared type (TypeScript syntax or a spec-side word) to a
+// comparable primitive bucket. Anything unrecognized returns null and
+// is left out of the comparison rather than guessed at.
+function normalizeType(raw) {
+  if (typeof raw !== "string") return null;
+  let t = raw.trim().replace(/;+$/, "").trim();
+  t = t.replace(/\|\s*(null|undefined)\b/g, "").replace(/\b(null|undefined)\s*\|/g, "").trim();
+  if (/\[\]$/.test(t) || /^Array\s*</.test(t) || t === "array") return "array";
+  if (/^Date\b/.test(t) || t === "date" || t === "datetime") return "date";
+  const m = t.match(/^(string|number|boolean|object)\b/);
+  if (m) return m[1];
+  if (t.startsWith("{")) return "object";
+  return null;
+}
+
+function loadSpec(ctx) {
+  const rel = ctx.inputs?.dataSpec;
+  if (!rel) return { kind: "unset" };
+  try {
+    const raw = JSON.parse(readFileSync(join(ctx.root, rel), "utf8"));
+    const list = Array.isArray(raw) ? raw : raw.interfaces;
+    if (!Array.isArray(list)) throw new Error("expected { interfaces: [...] }");
+    const interfaces = [];
+    for (const entry of list) {
+      if (!entry || typeof entry.name !== "string") continue;
+      const fields = new Map();
+      if (Array.isArray(entry.fields)) {
+        for (const f of entry.fields) if (typeof f === "string") fields.set(f, null);
+      } else if (entry.fields && typeof entry.fields === "object") {
+        for (const [k, v] of Object.entries(entry.fields)) fields.set(k, normalizeType(v));
+      }
+      interfaces.push({ name: entry.name, fields });
+    }
+    if (interfaces.length === 0) throw new Error("no named interfaces found");
+    return { kind: "ok", interfaces, rel };
+  } catch (err) {
+    return { kind: "error", message: err.message, rel };
+  }
+}
+
+// Index just past the closing brace that matches the `{` at openIdx.
+function blockEnd(code, openIdx) {
+  let depth = 0;
+  for (let i = openIdx; i < code.length; i++) {
+    if (code[i] === "{") depth++;
+    else if (code[i] === "}") {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+// Split a declaration body into depth-0 members (`;`/newline separated)
+// and pull out `name?: type` fields. Method shorthand (`save(): void`)
+// cannot match the field pattern, index signatures start with `[`, and
+// nested object types collapse to the "object" bucket.
+function parseFields(body, absStart, lineStarts) {
+  const fields = new Map();
+  const segments = [];
+  let depth = 0;
+  let segStart = 0;
+  for (let i = 0; i <= body.length; i++) {
+    const ch = body[i];
+    if (ch === "{" || ch === "[" || ch === "(") depth++;
+    else if (ch === "}" || ch === "]" || ch === ")") depth--;
+    if (i === body.length || (depth === 0 && (ch === ";" || ch === "\n"))) {
+      segments.push([segStart, i]);
+      segStart = i + 1;
+    }
+  }
+  const fieldRe = /^(?:readonly\s+|public\s+|private\s+|protected\s+)*([A-Za-z_$][\w$]*)\s*\??\s*:\s*([\s\S]+)$/;
+  for (const [s, e] of segments) {
+    const seg = body.slice(s, e);
+    const m = seg.trim().match(fieldRe);
+    if (!m) continue;
+    const line = lineAt(lineStarts, absStart + s + seg.indexOf(m[1]));
+    fields.set(m[1], { type: normalizeType(m[2]), line });
+  }
+  return fields;
+}
+
+function extractDeclarations(files, ctx) {
+  const decls = new Map();
+  const declRe = /\b(?:interface\s+([A-Za-z_$][\w$]*)|type\s+([A-Za-z_$][\w$]*)\s*=)\s*\{/g;
+  for (const file of files) {
+    if (!/\.tsx?$/.test(file.rel)) continue;
+    const view = ctx.views.get(file.rel);
+    for (const m of view.code.matchAll(declRe)) {
+      const name = m[1] || m[2];
+      if (decls.has(name)) continue;
+      const openIdx = m.index + m[0].length - 1;
+      const end = blockEnd(view.code, openIdx);
+      if (end < 0) continue;
+      decls.set(name, {
+        file: file.rel,
+        line: lineAt(view.lineStarts, m.index),
+        fields: parseFields(view.code.slice(openIdx + 1, end), openIdx + 1, view.lineStarts),
+      });
+    }
+  }
+  return decls;
+}
+
+function specChecks(files, ctx) {
+  const spec = loadSpec(ctx);
+  if (spec.kind === "unset") return [];
+  if (spec.kind === "error")
+    return [check("data-spec", null, `Data spec could not be loaded (${spec.message}) — field diff unverified.`)];
+  const decls = extractDeclarations(files, ctx);
+  if (decls.size === 0)
+    return [
+      check(
+        "data-spec",
+        null,
+        `Data spec ${spec.rel} declares ${spec.interfaces.length} interface(s), but no TypeScript interface/type declarations were found in the code — field diff unverified.`
+      ),
+    ];
+  const checks = [];
+  for (const iface of spec.interfaces) {
+    const decl = decls.get(iface.name);
+    if (!decl) {
+      checks.push(
+        violation(
+          "data-spec-interface-missing",
+          `Data spec interface "${iface.name}" has no matching type declaration in the code. The contract exists on paper only — nothing in the frontend models it.`,
+          spec.rel,
+          8
+        )
+      );
+      continue;
+    }
+    for (const [field, specType] of iface.fields) {
+      const codeField = decl.fields.get(field);
+      if (!codeField) {
+        checks.push(
+          violation(
+            "data-spec-field-missing",
+            `Field "${iface.name}.${field}" is defined in the data spec but missing from the code declaration. The contract promises this field; the frontend never models it.`,
+            `${decl.file}:${decl.line}`,
+            8
+          )
+        );
+      } else if (specType && codeField.type && specType !== codeField.type) {
+        checks.push(
+          violation(
+            "data-spec-type-mismatch",
+            `Field "${iface.name}.${field}" is typed "${codeField.type}" in code but "${specType}" in the data spec. Type drift across the contract boundary fails silently at runtime.`,
+            `${decl.file}:${codeField.line}`,
+            6
+          )
+        );
+      }
+    }
+    for (const [field, codeField] of decl.fields) {
+      if (!iface.fields.has(field)) {
+        checks.push(
+          violation(
+            "data-spec-field-undeclared",
+            `Field "${iface.name}.${field}" is declared in code but does not exist in the data spec. Either the spec is stale or the code invented a field — update one of them.`,
+            `${decl.file}:${codeField.line}`,
+            6
+          )
+        );
+      }
+    }
+  }
+  if (!checks.some((c) => c.passed === false)) {
+    const total = spec.interfaces.reduce((n, i) => n + i.fields.size, 0);
+    checks.push(
+      check("data-spec-conformant", true, `All ${spec.interfaces.length} data-spec interface(s) match the code declarations (${total} field(s) compared).`)
+    );
+  }
+  return checks;
+}
+
 export function checkData(files, rules, ctx) {
   const checks = [
     ...secretChecks(files, rules, ctx),
     ...urlChecks(files, rules, ctx),
     ...storageChecks(files, ctx),
     ...i18nChecks(files, ctx),
+    ...specChecks(files, ctx),
   ];
   if (!checks.some((c) => c.passed === false))
     checks.push(check("data-rules", true, "No credential or endpoint violations found."));
