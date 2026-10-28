@@ -118,3 +118,16 @@ test('init is idempotent: a second init skips the pack instead of duplicating', 
   const out = JSON.parse(r.stdout);
   for (const name of EXPECTED_SKILLS) assert.ok(out.skipped.includes(`.claude/skills/${name}`), name);
 });
+
+test('frontend focus: vue is a first-class stack pack, python is gone', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'harness-vue-'));
+  const r = run(dir, ['init', '--stack', 'vue', '--host', 'generic']);
+  assert.equal(r.status, 0, r.stderr);
+  const cfg = JSON.parse(readFileSync(path.join(dir, 'harness.config.json'), 'utf8'));
+  assert.equal(cfg.stack, 'vue');
+  assert.deepEqual(cfg.gateCommands, ['npm test']);
+  assert.match(readFileSync(path.join(dir, '.harness', 'standards.md'), 'utf8'), /Vue 3/);
+  const bad = run(dir, ['init', '--stack', 'python', '--host', 'generic']);
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr + bad.stdout, /node\|nextjs\|vue/);
+});

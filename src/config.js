@@ -7,7 +7,7 @@ export const HARNESS_DIR = '.harness';
 export const DEFAULT_CONFIG = {
   version: 1,
   host: 'claude-code', // claude-code | codex | generic — the CLI never runs an LLM itself
-  stack: 'node', // node | nextjs | python — selects a standards pack + default checks
+  stack: 'node', // node | nextjs | vue — selects a standards pack + default checks
   // Commands run by `harness gate` (fail-fast, in order). Empty = no delivery gate.
   gateCommands: [],
   budgets: {

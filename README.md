@@ -1,6 +1,15 @@
-# harness-cli
+# frontend-harness-cli
 
-A generic, host-agnostic **Harness kernel** for long-running AI coding.
+A host-agnostic **Harness kernel for long-running frontend AI coding**.
+
+Why frontend? Because that is where the evidence is. The sensor's five
+dimensions (structure / data / logic / **ui** / e2e), half the bundled
+skills (`component-from-design`, `i18n-extract`), the stack packs
+(**node / nextjs / vue**) and a decade of the author's production frontend
+work all point the same way. The kernel itself stays stack-agnostic —
+standards and defaults live in packs — but the product refuses to claim
+territory it has not measured. Frontend first; generality is earned per
+stack pack, not asserted.
 
 Other tools sell you a workflow. This one sells you **proof**: a feature is
 only "done" when a per-requirement rubric passes, no essential check failed,
@@ -41,7 +50,7 @@ clarify ──(user confirms; rubric coverage gate)──▶ implement
 ## Quick start
 
 ```bash
-node bin/harness.js init --stack node --host claude-code   # or nextjs/python, codex/generic
+node bin/harness.js init --stack node --host claude-code   # or nextjs/vue, codex/generic
 node bin/harness.js new checkout --title "Checkout flow"
 # …clarify with the user; the planner writes .harness/tasks/checkout/rubric.json + tasks.json
 node bin/harness.js clarify-done checkout    # coverage gate: every requirement needs an essential check
@@ -141,7 +150,7 @@ A rubric is generated **per feature**, from its requirements:
 
 ## Stack packs & hosts
 
-`init` installs a standards pack (`node`, `nextjs`, `python`) — the kernel is
+`init` installs a standards pack (`node`, `nextjs`, `vue`) — the kernel is
 stack-agnostic; the pack carries the conventions. Host support today:
 `claude-code` (installs a `harness` skill + a session-start hook that injects
 the active feature), `codex` / `generic` (instruction-file integration).
@@ -157,7 +166,7 @@ the active feature), `codex` / `generic` (instruction-file integration).
 ## Development
 
 ```bash
-npm test        # 21 tests: the v0.1 kernel set (coverage gate, veto, pitfall,
+npm test        # 22 tests: the v0.1 kernel set (coverage gate, veto, pitfall,
                 # judge evidence, resume, SHA verification, budget pause, full
                 # loop to done) + scan-score equivalence with the original
                 # ai-code-gate CLI, scan rubric items, and skills-pack

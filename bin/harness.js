@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * harness — a generic, host-agnostic Harness kernel for long-running AI coding.
+ * harness — the frontend-harness-cli kernel for long-running frontend AI coding.
  *
  * The CLI never calls an LLM. It owns the parts that must be deterministic:
  * state (files, resumable), rubric coverage, evaluation with veto rules,
@@ -107,7 +107,7 @@ function cmdInit() {
   const stack = arg('--stack', 'node');
   const host = arg('--host', 'claude-code');
   const force = has('--force');
-  if (!['node', 'nextjs', 'python'].includes(stack)) fail(`Unknown stack "${stack}" (node|nextjs|python).`);
+  if (!['node', 'nextjs', 'vue'].includes(stack)) fail(`Unknown stack "${stack}" (node|nextjs|vue).`);
   if (!['claude-code', 'codex', 'generic'].includes(host)) fail(`Unknown host "${host}" (claude-code|codex|generic).`);
 
   const made = [];
@@ -124,7 +124,7 @@ function cmdInit() {
   config.host = host;
   if (stack === 'node') config.gateCommands = ['npm test'];
   if (stack === 'nextjs') config.gateCommands = ['npm run gate'];
-  if (stack === 'python') config.gateCommands = ['python -m pytest -q'];
+  if (stack === 'vue') config.gateCommands = ['npm test'];
   write(configPath(root), `${JSON.stringify(config, null, 2)}\n`);
 
   mkdirSync(harnessDir(root), { recursive: true });
@@ -147,7 +147,7 @@ function cmdInit() {
       '# Claude Code host setup\n\nRegister the session-start hook in `.claude/settings.json`:\n\n```json\n{\n  "hooks": {\n    "SessionStart": [{ "hooks": [{ "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh" }] }]\n  }\n}\n```\n\nThe `harness` skill is already installed at `.claude/skills/harness/SKILL.md`, and the bundled skills pack (plan-before-code, deterministic-eval, …) is installed alongside it. Manage the pack with `harness skills list|install`.\n');
   } else {
     write(path.join(harnessDir(root), 'host-setup.md'),
-      `# Host setup (${host})\n\nAt the start of every session, the host agent must run \`harness next <feature>\` and follow the returned action. Add that sentence to your agent instructions file (AGENTS.md / equivalent). The harness skill text for reference is in the harness-cli package: templates/claude-code/SKILL.md.\n`);
+      `# Host setup (${host})\n\nAt the start of every session, the host agent must run \`harness next <feature>\` and follow the returned action. Add that sentence to your agent instructions file (AGENTS.md / equivalent). The harness skill text for reference is in the frontend-harness-cli package: templates/claude-code/SKILL.md.\n`);
   }
 
   print({ ok: true, stack, host, created: made, skipped },
@@ -372,10 +372,10 @@ try {
     case 'scan': cmdScan(); break;
     case 'skills': cmdSkills(); break;
     default:
-      console.log(`harness — generic Harness kernel for long-running AI coding
+      console.log(`harness — frontend Harness kernel for long-running AI coding
 
 Usage:
-  harness init [--stack node|nextjs|python] [--host claude-code|codex|generic] [--force]
+  harness init [--stack node|nextjs|vue] [--host claude-code|codex|generic] [--force]
   harness new <feature> [--title "..."]
   harness clarify-done <feature>        Lock clarification (rubric coverage gate)
   harness next <feature> [--json]       The next action, derived from state alone (resume)

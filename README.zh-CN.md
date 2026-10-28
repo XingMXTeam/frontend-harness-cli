@@ -1,6 +1,13 @@
-# harness-cli
+# frontend-harness-cli
 
-一个通用的、不绑宿主的 **Harness 内核**，为长程 AI 编程而造。
+一个不绑宿主的 **Harness 内核**，专为长程**前端** AI 编程而造。
+
+为什么先做前端？因为证据都在前端。传感器的五维（structure / data /
+logic / **ui** / e2e）、技能包里一半的 Skill（component-from-design、
+i18n-extract）、技术栈包（**node / nextjs / vue**），加上作者十年一线
+前端的实测经验，指向的都是同一个方向。内核本身保持与栈无关——规范与
+默认都放在栈包里——但产品不宣称没有实测过的地盘。先做前端；通用性
+靠一个个栈包挣出来，不靠嘴说。
 
 别人卖的是流程，这个卖的是**证据**：一个需求只有在「按需求生成的 rubric
 通过、无 essential 项失败、无 pitfall 触发、交付门禁绿、且达到配置的稳定
@@ -34,7 +41,7 @@
 ## 快速开始
 
 ```bash
-node bin/harness.js init --stack node --host claude-code  # 栈: node/nextjs/python; 宿主: claude-code/codex/generic
+node bin/harness.js init --stack node --host claude-code  # 栈: node/nextjs/vue; 宿主: claude-code/codex/generic
 node bin/harness.js new checkout --title "结算流程"
 # 与用户澄清后，由 Planner 写 .harness/tasks/checkout/rubric.json 与 tasks.json
 node bin/harness.js clarify-done checkout
@@ -43,7 +50,7 @@ node bin/harness.js task-done checkout TASK-1 --sha <commit>
 node bin/harness.js eval checkout
 node bin/harness.js report checkout
 npm run demo   # 自带端到端演示，含一次模拟中途中断后的续跑
-npm test       # 21 个测试：v0.1 内核全套（覆盖门禁/否决/pitfall/judge 证据/续跑/SHA/预算停机/全流程）
+npm test       # 22 个测试：v0.1 内核全套（覆盖门禁/否决/pitfall/judge 证据/续跑/SHA/预算停机/全流程）
                # + scan 与原 ai-code-gate CLI 分数等价 + scan 类 rubric 条目
                # + 技能包装语义（全装/已存在跳过/--only/未知名称报错）
 ```

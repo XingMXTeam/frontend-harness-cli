@@ -1,11 +1,11 @@
 ---
 name: harness
-description: Run the harness-cli long-running workflow for a feature. Use when the user asks to start, continue, resume or check a harness feature, or says "/harness <feature>".
+description: Run the frontend-harness-cli long-running workflow for a feature. Use when the user asks to start, continue, resume or check a harness feature, or says "/harness <feature>".
 ---
 
 # harness
 
-This project uses **harness-cli**. The CLI (`harness`) is the orchestrator and
+This project uses **frontend-harness-cli**. The CLI (`harness`) is the orchestrator and
 the only source of truth for workflow state. You are a host agent: you do the
 planning / coding / judging work it dispatches, you never invent state.
 

@@ -47,6 +47,15 @@
    CLI's output on both fixtures, and pin the installer's semantics
    (install-all / skip-existing / --only / unknown-name error).
 
+10. **Frontend-first positioning (renamed from harness-cli, v0.2).**
+    The product is named and sold as a *frontend* harness. The kernel
+    staying stack-agnostic is an implementation property; the claim is
+    frontend, because every piece of hard evidence behind the product —
+    the sensor's ui dimension, the design-token and i18n skills, the
+    stack packs (node / nextjs / vue; the token python pack was removed),
+    and the author's production history — is frontend evidence. A stack
+    joins the supported list when a pack plus a real run earns it.
+
 ## Not in v0.2 (deliberately)
 
 - Agent spawning / multi-agent scheduling inside the CLI.
@@ -62,10 +71,11 @@
   until the unified CLI has public mileage; then they get a pointer README
   and an archive, not a silent disappearance.
 
-## Validation standard for calling this "generic"
+## Validation standard for the frontend claim
 
 The claim is only earned when the same kernel, unchanged, completes a real
-feature in two unrelated repositories (different stacks), including:
+feature in two unrelated **frontend** repositories (different stacks —
+e.g. one Next.js app and one Vue app), including:
 a mid-run kill + resume, and a planted fatal defect that the veto catches.
 The bundled tests simulate both; the two-repo run is the release gate for
 v1.0, not a launch-day claim.
