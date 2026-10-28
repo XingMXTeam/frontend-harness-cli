@@ -1,0 +1,6 @@
+{
+  "inputs": {
+    "visualResults": "visual-results.json",
+    "visualCommand": "node fake-visual.mjs"
+  }
+}

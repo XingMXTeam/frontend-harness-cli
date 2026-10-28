@@ -127,6 +127,9 @@ export const DEFAULT_CONFIG = {
     coverage: null, // istanbul coverage-summary.json (feeds the e2e dimension)
     uiEvidenceDir: null, // directory of UI screenshots used as pass evidence
     uiEvidenceMinBytes: 8192, // a screenshot smaller than this is a blank page, not evidence
+    visualResults: null, // pixel-diff report in `harness visual` comparison.json shape: { results: [{ name, status, ratio, maxDiffRatio }] }
+    visualCommand: null, // shell command the scan runs itself before scoring ui (e.g. a capture+visual script) so visualResults is fresh
+    visualTimeoutMs: null, // timeout for visualCommand (default 180000)
   },
 
   // When set, every run appends its full JSON report to this directory

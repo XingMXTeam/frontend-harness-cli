@@ -1,0 +1,7 @@
+{
+  "verdict": "pass",
+  "results": [
+    { "name": "home", "status": "match", "ratio": 0.002, "maxDiffRatio": 0.01 },
+    { "name": "pricing", "status": "match", "ratio": 0, "maxDiffRatio": 0.01 }
+  ]
+}

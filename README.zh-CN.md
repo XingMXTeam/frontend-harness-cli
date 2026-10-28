@@ -62,7 +62,7 @@ node bin/harness.js eval checkout
 node bin/harness.js report checkout
 npm run demo     # 端到端演示，含一次模拟中途中断后的续跑
 npm run example  # examples/notice-list：真实功能走完 失败 → replan → 修复 → 通过 → done
-npm test         # 82 个测试：v0.1 内核全套（覆盖门禁/否决/pitfall/judge 证据/续跑/SHA/预算停机/全流程）
+npm test         # 87 个测试：v0.1 内核全套（覆盖门禁/否决/pitfall/judge 证据/续跑/SHA/预算停机/全流程）
                # + v0.2 统一（scan 分数等价/scan 条目/技能包装语义）
                # + v0.3（vision 锚点与豁免/e2e 六类配额/verify-zone/scope/scan 历史/skills 自评计分）
                # + v0.4 run 驱动（无人值守跑到 done/驱动重启续跑/澄清需人停机/Agent 失败与停滞检测）
@@ -70,6 +70,7 @@ npm test         # 82 个测试：v0.1 内核全套（覆盖门禁/否决/pitfal
                #   改进建议 → replan/capture 与 visual/notice-list 示例重放）
                # + v0.6 数据契约对照（字段 diff 通过/扣分、spec 不可加载或无类型声明时中立）
                # + v0.7 真跑（自动探测 tsc 编译通过/失败/可关、testCommand 与 --run-tests 执行、仅退出码信号）
+               # + v0.8 视觉保真（comparison.json 消费、diff/尺寸变化扣分、无基线中立、visualCommand 刷新）
 ```
 
 ## v0.3 补齐：品质锚定、治理接线、分母与自评
@@ -194,6 +195,24 @@ vs date）扣 6，代码声明了契约里没有的字段扣 6。不给 spec 输
 
 注意：真跑意味着会执行被扫项目自己的二进制与脚本——只扫你本来就敢
 自己运行的项目。
+
+## 视觉保真：UI 维真的比像素（v0.8）
+
+静态 UI 检查（alt、内联样式、裸 hex）只能证明页面「守规矩」，证明不
+了它「还长得像审批过的设计稿」。把 `inputs.visualResults` 指向一份
+`harness visual` 写出的同款对照报告：
+
+```json
+{ "results": [{ "name": "home", "status": "diff",
+  "ratio": 0.1832, "maxDiffRatio": 0.01 }] }
+```
+
+每个页面按真实像素差评分：状态为 `diff` 或 `size-mismatch` 扣 8；
+`no-baseline` 报中立——未验证，绝不冒充通过，与 `harness visual`
+自身的判定语义一致。再设 `inputs.visualCommand` 为负责截图加比对的
+脚本，scan 会在评分前自己把报告刷新一遍。至此五维全部有了真跑或参
+照物路径：结构真编译、数据对契约、逻辑对计划覆盖、UI 比像素、e2e
+真跑测试。
 
 ## 诚实边界（v0.5）
 

@@ -139,6 +139,18 @@ v1.0, not a launch-day claim.
 
 ## Changelog
 
+- v0.8.0 — the ui dimension gains pixel-level fidelity. With
+  `inputs.visualResults` pointing at a comparison report in the exact
+  shape `harness visual` writes ({ results: [{ name, status, ratio,
+  maxDiffRatio }] }), each compared page is scored from its real pixel
+  diff: status diff or size-mismatch deducts 8; status no-baseline is
+  reported neutral — unverified, never a silent pass, mirroring
+  `harness visual`'s own verdict semantics. `inputs.visualCommand`
+  lets the scan refresh the report itself before scoring (typically a
+  capture+visual pipeline script); the file remains the source of
+  truth. With this, every one of the five dimensions has a real-run or
+  reference-artifact path: structure compiles, data diffs a contract,
+  logic checks plan coverage, ui compares pixels, e2e runs the suite.
 - v0.7.0 — scan stops grading stale artifacts and actually runs things.
   Structure: with no explicit compileCommand, a locally installed tsc
   (tsconfig.json + node_modules/.bin/tsc) is auto-detected and a real

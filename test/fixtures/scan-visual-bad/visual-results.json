@@ -1,0 +1,8 @@
+{
+  "verdict": "fail",
+  "results": [
+    { "name": "home", "status": "diff", "ratio": 0.1832, "maxDiffRatio": 0.01 },
+    { "name": "pricing", "status": "size-mismatch", "detail": "baseline 1280x800 vs actual 1280x960" },
+    { "name": "about", "status": "match", "ratio": 0.001, "maxDiffRatio": 0.01 }
+  ]
+}

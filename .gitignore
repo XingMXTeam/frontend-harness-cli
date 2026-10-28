@@ -12,3 +12,5 @@ test/fixtures/**/results.json
 !test/fixtures/**/node_modules/
 !test/fixtures/**/node_modules/.bin/
 !test/fixtures/**/node_modules/.bin/tsc
+# produced by the fixture pipeline during tests; never source
+test/fixtures/scan-visual-cmd/visual-results.json

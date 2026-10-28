@@ -172,11 +172,34 @@ function summarize(dimensions) {
   return { failedReasons, remediation, notCovered };
 }
 
+const VISUAL_TIMEOUT_DEFAULT_MS = 180_000;
+
+// Same contract as runTests, for the UI dimension: when inputs.visualCommand
+// is configured, the scan refreshes the visual comparison itself (the
+// command typically captures fresh screenshots and runs the pixel diff,
+// e.g. via `harness capture` + `harness visual`, writing the
+// comparison.json that inputs.visualResults points at). The results file
+// remains the source of truth; the exit code is only recorded.
+function runVisual(root, config, ctx) {
+  const command = config.inputs?.visualCommand;
+  if (!command) return;
+  const timeout = config.inputs?.visualTimeoutMs ?? VISUAL_TIMEOUT_DEFAULT_MS;
+  try {
+    execSync(command, { cwd: root, stdio: "pipe", timeout, maxBuffer: 16 * 1024 * 1024 });
+    ctx.visualRun = { command, exitCode: 0 };
+  } catch (err) {
+    if (err.code === "ETIMEDOUT") ctx.visualRun = { command, error: `timed out after ${timeout}ms` };
+    else if (typeof err.status === "number") ctx.visualRun = { command, exitCode: err.status };
+    else ctx.visualRun = { command, error: err.message };
+  }
+}
+
 export function evaluate(root, config, opts = {}) {
   const files = collectFiles(root, config);
   const ctx = buildContext(root, config, files);
   runCompile(root, config, ctx);
   runTests(root, config, ctx, opts);
+  runVisual(root, config, ctx);
 
   // 1. Score every dimension. 2. Evaluate named gates in order;
   // short-circuit at the first failure. 3. Summarize for remediation.

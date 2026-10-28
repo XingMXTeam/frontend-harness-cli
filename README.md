@@ -314,6 +314,28 @@ locally:
   report says so. A command that cannot complete leaves the run signal
   unverified rather than inventing a result.
 
+## Visual fidelity: the UI dimension compares pixels (v0.8)
+
+Static UI checks (alt text, inline styles, raw hex) can prove a page
+*follows the rules*; they cannot prove it still *looks like the design
+that was approved*. Point `inputs.visualResults` at a comparison
+report in the shape `harness visual` writes:
+
+```json
+{ "results": [{ "name": "home", "status": "diff",
+  "ratio": 0.1832, "maxDiffRatio": 0.01 }] }
+```
+
+and each page is scored from its real pixel diff: a page whose status
+is `diff` or `size-mismatch` deducts 8; a page with `no-baseline` is
+reported *neutral* — unverified, never a silent pass, the same
+semantics `harness visual` itself uses. Set `inputs.visualCommand` to
+the script that captures fresh screenshots and runs the comparison,
+and the scan refreshes the report itself before scoring. With this,
+every dimension has a real-run or reference-artifact path: structure
+compiles, data diffs a contract, logic checks plan coverage, UI
+compares pixels, e2e runs the suite.
+
 ## Honest boundaries (v0.5)
 
 - The kernel orchestrates and evaluates; it never calls an LLM.
@@ -344,7 +366,7 @@ locally:
 ## Development
 
 ```bash
-npm test        # 82 tests: the v0.1 kernel set (coverage gate, veto, pitfall,
+npm test        # 87 tests: the v0.1 kernel set (coverage gate, veto, pitfall,
                 # judge evidence, resume, SHA verification, budget pause, full
                 # loop to done) + v0.2 unification (scan-score equivalence with
                 # the original ai-code-gate CLI, scan rubric items, skills-pack
@@ -360,6 +382,9 @@ npm test        # 82 tests: the v0.1 kernel set (coverage gate, veto, pitfall,
                 # neutral on unloadable spec or missing declarations)
                 # + v0.7 real runs (auto-detected tsc compile pass/fail/opt-out,
                 # testCommand and --run-tests execution, exit-code signal)
+                # + v0.8 visual fidelity (comparison.json consumption,
+                # diff/size-mismatch deductions, no-baseline neutral,
+                # visualCommand refresh)
 ```
 
 MIT License.

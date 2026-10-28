@@ -1,7 +1,9 @@
 // UI dimension: image alt text, inline-style sprawl, raw hex colors,
-// design-token validity, screenshot evidence. Color literals in JS/TS
-// live inside strings by nature, so hex and var(--*) are matched on the
-// code view *and* literal contents; in stylesheets they are code.
+// design-token validity, screenshot evidence, and — when a visual
+// comparison report is provided as an input — pixel-level fidelity
+// against adopted baselines. Color literals in JS/TS live inside
+// strings by nature, so hex and var(--*) are matched on the code view
+// *and* literal contents; in stylesheets they are code.
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -120,6 +122,76 @@ function evidenceChecks(ctx) {
   return checks;
 }
 
+// Visual fidelity: pixel-diff results against adopted baselines, in the
+// comparison.json shape `harness visual` writes ({ results: [{ name,
+// status, ratio, maxDiffRatio }] }). The comparison already applied its
+// own tolerance, so this check trusts each page's status:
+//   diff / size-mismatch → the rendered page no longer matches the
+//                          design baseline it was approved against (8 pts)
+//   no-baseline          → NOT a failure and NOT a pass: that page is
+//                          unverified, reported neutral (mirrors the
+//                          verdict semantics of `harness visual` itself)
+//   match                → verified
+// Without the input there is nothing to compare against and the check
+// stays silent. inputs.visualCommand lets the scan refresh the report
+// itself before scoring; the file remains the source of truth.
+function visualChecks(ctx) {
+  const rel = ctx.inputs?.visualResults;
+  const vr = ctx.visualRun;
+  if (!rel && !vr) return [];
+  let data = null;
+  let loadNote = null;
+  if (rel) {
+    try {
+      data = JSON.parse(readFileSync(join(ctx.root, rel), "utf8"));
+      if (!data || !Array.isArray(data.results)) {
+        loadNote = `Visual results file ${rel} has no results array (expected the comparison.json shape written by harness visual) — visual diff unverified.`;
+        data = null;
+      }
+    } catch (err) {
+      loadNote = `Visual results could not be loaded (${err.message}) — visual diff unverified.`;
+    }
+  }
+  if (!data) {
+    if (vr?.error)
+      return [check("visual-diff", null, `Visual command "${vr.command}" could not complete (${vr.error}) — visual diff unverified.`)];
+    if (loadNote) return [check("visual-diff", null, loadNote)];
+    if (vr)
+      return [check("visual-diff", null, `Visual command "${vr.command}" exited ${vr.exitCode} but no visualResults file was produced — visual diff unverified.`)];
+    return [];
+  }
+  const checks = [];
+  let compared = 0;
+  const noBaseline = [];
+  for (const r of data.results) {
+    if (!r || typeof r.name !== "string") continue;
+    if (r.status === "match") {
+      compared++;
+    } else if (r.status === "diff") {
+      compared++;
+      checks.push(
+        violation("visual-diff", `Page "${r.name}" no longer matches its design baseline: pixel diff ratio ${r.ratio} exceeds the allowed ${r.maxDiffRatio}. Either the change is intended (review and re-adopt the baseline) or the UI drifted.`, rel, 8)
+      );
+    } else if (r.status === "size-mismatch") {
+      compared++;
+      checks.push(
+        violation("visual-size-mismatch", `Page "${r.name}" changed dimensions vs its baseline (${r.detail || "size-mismatch"}). A viewport-sized change is a structural layout break, not a styling drift.`, rel, 8)
+      );
+    } else if (r.status === "no-baseline") {
+      noBaseline.push(r.name);
+    }
+  }
+  if (noBaseline.length > 0) {
+    checks.push(
+      check("visual-baseline-missing", null, `${noBaseline.length} page(s) have no baseline (${noBaseline.join(", ")}) — unverified, not passed. Review the screenshots and adopt baselines explicitly (harness visual --update-baseline).`)
+    );
+  }
+  if (compared > 0 && !checks.some((c) => c.passed === false)) {
+    checks.push(check("visual-diff", true, `All ${compared} compared page(s) match their design baselines within tolerance.`));
+  }
+  return checks;
+}
+
 export function checkUi(files, rules, ctx) {
   const uiFiles = files.filter((f) => UI_FILE.test(f.rel));
   const checks = [];
@@ -127,7 +199,7 @@ export function checkUi(files, rules, ctx) {
     const view = ctx.views.get(file.rel);
     checks.push(...imgChecks(file, view), ...styleChecks(file, view, rules), ...hexChecks(file, view, rules));
   }
-  checks.push(...tokenChecks(files, uiFiles, ctx), ...evidenceChecks(ctx));
+  checks.push(...tokenChecks(files, uiFiles, ctx), ...evidenceChecks(ctx), ...visualChecks(ctx));
   if (!checks.some((c) => c.passed === false))
     checks.push(check("ui-rules", true, "No accessibility or design-token violations found."));
   return checks;

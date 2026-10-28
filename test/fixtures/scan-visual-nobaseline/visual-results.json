@@ -1,0 +1,7 @@
+{
+  "verdict": "no-baseline",
+  "results": [
+    { "name": "home", "status": "no-baseline" },
+    { "name": "pricing", "status": "match", "ratio": 0.001, "maxDiffRatio": 0.01 }
+  ]
+}
