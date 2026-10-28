@@ -1,0 +1,217 @@
+{
+  "version": 1,
+  "feature": "notice-list",
+  "title": "Notice list",
+  "phase": "done",
+  "createdAt": "<time>",
+  "updatedAt": "<time>",
+  "macroCycle": {
+    "current": 2,
+    "max": 3
+  },
+  "consecutivePasses": 2,
+  "clarificationComplete": true,
+  "tasks": [
+    {
+      "id": "TASK-1",
+      "title": "Notice model: newest-first sort and unread count",
+      "requirements": [
+        "REQ-1"
+      ],
+      "status": "done",
+      "attempts": 0,
+      "commitSha": null
+    },
+    {
+      "id": "TASK-2",
+      "title": "Render ready / empty / loading / error states with escaping",
+      "requirements": [
+        "REQ-1",
+        "REQ-2",
+        "REQ-3"
+      ],
+      "status": "done",
+      "attempts": 0,
+      "commitSha": null
+    },
+    {
+      "id": "TASK-3",
+      "title": "Token-based styles and the demo page",
+      "requirements": [
+        "REQ-1",
+        "REQ-2"
+      ],
+      "status": "done",
+      "attempts": 0,
+      "commitSha": null
+    }
+  ],
+  "history": [
+    {
+      "at": "<time>",
+      "event": "clarify-done",
+      "tasks": 3
+    },
+    {
+      "at": "<time>",
+      "event": "task-done",
+      "task": "TASK-1",
+      "commitSha": null
+    },
+    {
+      "at": "<time>",
+      "event": "task-done",
+      "task": "TASK-2",
+      "commitSha": null
+    },
+    {
+      "at": "<time>",
+      "event": "task-done",
+      "task": "TASK-3",
+      "commitSha": null
+    },
+    {
+      "at": "<time>",
+      "event": "rubric-refinements-recorded",
+      "ids": [
+        "RS-1"
+      ]
+    },
+    {
+      "at": "<time>",
+      "event": "evaluation-failed",
+      "score": 0.882,
+      "vetoed": [
+        {
+          "id": "RB-6",
+          "reason": "essential item failed: judge: Density and hierarchy match REF-1 (one row per notice, bold + dot when unread, muted time), but long titles are cut off: .notice__title is nowrap + ellipsis, so E2E-5's 300-character title shows ~70 characters at 1280px and ~20 at 375px with no way to read the rest. The PRD says long titles w"
+        }
+      ],
+      "nextMacroCycle": 2
+    },
+    {
+      "at": "<time>",
+      "event": "replanned",
+      "accepted": [
+        "RS-1"
+      ],
+      "rejected": [],
+      "newTasks": []
+    },
+    {
+      "at": "<time>",
+      "event": "remediation-fixed",
+      "items": [
+        "RB-6"
+      ],
+      "commitSha": null
+    },
+    {
+      "at": "<time>",
+      "event": "rubric-refinements-recorded",
+      "ids": [
+        "RS-2",
+        "RS-3"
+      ]
+    },
+    {
+      "at": "<time>",
+      "event": "evaluation-passed",
+      "score": 1,
+      "consecutivePasses": 1,
+      "phaseAtEval": "implement"
+    },
+    {
+      "at": "<time>",
+      "event": "evaluation-passed",
+      "score": 1,
+      "consecutivePasses": 2,
+      "phaseAtEval": "verify"
+    },
+    {
+      "at": "<time>",
+      "event": "done",
+      "score": 1
+    }
+  ],
+  "lastEvaluation": {
+    "at": "<time>",
+    "verdict": "pass",
+    "score": 1,
+    "vetoed": []
+  },
+  "lastFailure": {
+    "at": "<time>",
+    "kind": "evaluation",
+    "vetoed": [
+      {
+        "id": "RB-6",
+        "reason": "essential item failed: judge: Density and hierarchy match REF-1 (one row per notice, bold + dot when unread, muted time), but long titles are cut off: .notice__title is nowrap + ellipsis, so E2E-5's 300-character title shows ~70 characters at 1280px and ~20 at 375px with no way to read the rest. The PRD says long titles w"
+      }
+    ],
+    "openItems": [
+      "RB-6"
+    ]
+  },
+  "rubricBaseline": {
+    "RB-1": "essential",
+    "RB-2": "essential",
+    "RB-12": "essential",
+    "RB-13": "pitfall",
+    "RB-3": "essential",
+    "RB-4": "pitfall",
+    "RB-5": "pitfall",
+    "RB-6": "essential",
+    "RB-7": "pitfall",
+    "RB-8": "important",
+    "RB-9": "essential",
+    "RB-10": "pitfall",
+    "RB-11": "optional"
+  },
+  "rubricHash": "e790e1a79d6054ea",
+  "pendingRefinements": [
+    {
+      "id": "RS-2",
+      "type": "add-verification",
+      "item": "RB-9",
+      "problem": "the item is scored from rendered HTML; the vision's 'one obvious next action' is a visual claim",
+      "suggestion": "once Playwright is available in CI, cite harness capture PNGs of /?state=empty and /?state=error and measure the button's contrast (H-UI-2.3)",
+      "layer": null,
+      "level": null,
+      "source": ".harness/tasks/notice-list/evaluation/judge-rb-9.json",
+      "cycle": 2,
+      "at": "<time>"
+    },
+    {
+      "id": "RS-3",
+      "type": "add",
+      "item": "NEW",
+      "problem": null,
+      "suggestion": "Retry shows a loading state while the request is in flight and cannot be double-clicked (H-UX-2.4)",
+      "layer": "L4",
+      "level": "important",
+      "source": ".harness/tasks/notice-list/evaluation/judge-rb-9.json",
+      "cycle": 2,
+      "at": "<time>"
+    }
+  ],
+  "refinementLog": [
+    {
+      "id": "RS-1",
+      "type": "refine",
+      "item": "RB-6",
+      "problem": "'no clipping' had no viewport or measurement, so the developer could read it as 'clipping with an ellipsis is fine'",
+      "suggestion": "name the viewports (375px and 1280px) and the measurement: no .notice__title with scrollWidth > clientWidth",
+      "layer": null,
+      "level": null,
+      "source": ".harness/tasks/notice-list/evaluation/judge-rb-6.json",
+      "cycle": 1,
+      "at": "<time>",
+      "decision": "accepted",
+      "note": "RB-6 now names 375px and 1280px and the scrollWidth > clientWidth measurement (H-UI-6.4).",
+      "decidedAt": "<time>"
+    }
+  ],
+  "remediationFixedAt": null,
+  "remediation": []
+}

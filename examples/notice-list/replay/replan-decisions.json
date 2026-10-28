@@ -1,0 +1,3 @@
+[
+  { "id": "RS-1", "decision": "accepted", "note": "RB-6 now names 375px and 1280px and the scrollWidth > clientWidth measurement (H-UI-6.4)." }
+]

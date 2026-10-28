@@ -1,0 +1,14 @@
+[
+  { "id": "E2E-1", "category": "core", "mapsTo": "REQ-1", "blocking": true, "severity": "critical", "route": "/?state=ready",
+    "steps": ["open /?state=ready"], "expect": ["first row is the newest notice (n3)", "two rows are bold with a dot", "badge reads 2"] },
+  { "id": "E2E-2", "category": "core", "mapsTo": "REQ-1", "blocking": false, "severity": "major", "route": "/?state=ready",
+    "steps": ["open /?state=ready", "Tab through the page"], "expect": ["no focus trap", "times are visible for every row"] },
+  { "id": "E2E-3", "category": "negative", "mapsTo": "REQ-2", "blocking": true, "severity": "critical", "route": "/?state=error",
+    "steps": ["open /?state=error"], "expect": ["danger-colored message", "Retry button", "no 'No notices yet' text"] },
+  { "id": "E2E-4", "category": "negative", "mapsTo": "REQ-3", "blocking": true, "severity": "critical", "route": "/?state=ready",
+    "steps": ["render a notice titled <img src=x onerror=alert(1)>"], "expect": ["the title shows the literal text", "no dialog opens"] },
+  { "id": "E2E-5", "category": "boundary", "mapsTo": "REQ-1", "blocking": false, "severity": "minor", "route": "/?state=ready",
+    "steps": ["render a 300-character title at 1280px and 375px"], "expect": ["the title wraps", "nothing is clipped or overlaps the time"] },
+  { "id": "E2E-6", "category": "uiJourney", "mapsTo": "REQ-2", "blocking": false, "severity": "major", "route": "/?state=empty",
+    "steps": ["open /?state=empty"], "expect": ["one muted sentence", "a Refresh button"] }
+]

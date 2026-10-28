@@ -1,0 +1,14 @@
+{
+  "score": 1,
+  "note": "Empty: 'No notices yet.' + one Refresh button. Error: danger-colored sentence + one Retry button, and never the empty sentence (RL-2 holds). Both actions are type=button and keyboard reachable.",
+  "artifacts": [
+    ".harness/tasks/notice-list/evaluation/render-empty.html",
+    ".harness/tasks/notice-list/evaluation/render-error.html"
+  ],
+  "heuristics": [
+    "H-UX-2.3",
+    "H-UX-3.2",
+    "H-UX-3.4",
+    "H-UI-6.1"
+  ]
+}

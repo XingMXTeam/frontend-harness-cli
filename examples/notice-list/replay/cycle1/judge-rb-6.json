@@ -1,0 +1,9 @@
+{
+  "score": 0,
+  "note": "Density and hierarchy match REF-1 (one row per notice, bold + dot when unread, muted time), but long titles are cut off: .notice__title is nowrap + ellipsis, so E2E-5's 300-character title shows ~70 characters at 1280px and ~20 at 375px with no way to read the rest. The PRD says long titles wrap, never clip. Essential item not met.",
+  "artifacts": [".harness/tasks/notice-list/evaluation/render-ready.html"],
+  "heuristics": ["H-UI-6.4", "H-UI-7.1"],
+  "rubricRefinementSuggestions": [
+    { "type": "refine", "item": "RB-6", "problem": "'no clipping' had no viewport or measurement, so the developer could read it as 'clipping with an ellipsis is fine'", "suggestion": "name the viewports (375px and 1280px) and the measurement: no .notice__title with scrollWidth > clientWidth" }
+  ]
+}

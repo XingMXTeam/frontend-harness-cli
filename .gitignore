@@ -3,3 +3,6 @@ node_modules/
 harness.config.json
 test-results/
 *.log
+# example projects ship their harness files on purpose
+!examples/*/.harness/
+!examples/*/harness.config.json

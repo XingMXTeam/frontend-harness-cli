@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "feature": "notice-list",
+  "layerWeights": true,
+  "policy": {
+    "minEssentialPerLayer": 1,
+    "minPitfallsPerLayer": 1
+  },
+  "requirements": [
+    {
+      "id": "REQ-1",
+      "description": "Notices are listed newest first; unread notices are visually distinct; the unread count is shown."
+    },
+    {
+      "id": "REQ-2",
+      "description": "Loading, empty and error are distinct states; the error state offers retry and the empty state offers refresh."
+    },
+    {
+      "id": "REQ-3",
+      "description": "Notice text is displayed as text — markup in a title is never interpreted."
+    }
+  ],
+  "items": [
+    {
+      "id": "RB-1",
+      "requirement": "REQ-1",
+      "layer": "L1",
+      "level": "essential",
+      "kind": "command",
+      "command": "node --test test/model.test.js",
+      "description": "newest-first, stable, non-mutating sort; correct unread count"
+    },
+    {
+      "id": "RB-2",
+      "requirement": "REQ-1",
+      "layer": "L1",
+      "level": "essential",
+      "kind": "command",
+      "command": "node --test --test-name-pattern=\"ready\" test/render.test.js",
+      "description": "ready state renders rows newest first with unread markers and the count badge"
+    },
+    {
+      "id": "RB-12",
+      "requirement": "REQ-3",
+      "layer": "L1",
+      "level": "essential",
+      "kind": "grep",
+      "path": "src/notice-list.js",
+      "pattern": "escapeHtml\\(n\\.title\\)",
+      "expect": "present",
+      "description": "every user-generated field that reaches HTML goes through the single escaping function"
+    },
+    {
+      "id": "RB-13",
+      "requirement": "REQ-1",
+      "layer": "L1",
+      "level": "pitfall",
+      "kind": "command",
+      "command": "node --test --test-name-pattern=\"does not mutate\" test/model.test.js",
+      "description": "sorting must not reorder the caller's array in place (a shared-state bug the list would otherwise hide)"
+    },
+    {
+      "id": "RB-3",
+      "requirement": "REQ-2",
+      "layer": "L2",
+      "level": "essential",
+      "kind": "command",
+      "command": "node --test --test-name-pattern=\"three different screens\" test/render.test.js",
+      "description": "loading, empty and error are distinct, each with its own message and action"
+    },
+    {
+      "id": "RB-4",
+      "requirement": "REQ-2",
+      "layer": "L2",
+      "level": "pitfall",
+      "kind": "command",
+      "command": "node --test --test-name-pattern=\"never renders as an empty list\" test/render.test.js",
+      "description": "RL-2: a failed load never shows the empty-list sentence"
+    },
+    {
+      "id": "RB-5",
+      "requirement": "REQ-3",
+      "layer": "L2",
+      "level": "pitfall",
+      "kind": "command",
+      "command": "node --test --test-name-pattern=\"escaped\" test/render.test.js",
+      "description": "RL-1: markup in a title is rendered as text"
+    },
+    {
+      "id": "RB-6",
+      "requirement": "REQ-1",
+      "layer": "L3",
+      "level": "essential",
+      "kind": "judge",
+      "anchor": "REF-1",
+      "evidence": ".harness/tasks/notice-list/evaluation/judge-rb-6.json",
+      "description": "list density and hierarchy match REF-1: one row per notice, bold title + dot when unread, muted right-aligned time, 12px rhythm, no clipping"
+    },
+    {
+      "id": "RB-7",
+      "requirement": "REQ-1",
+      "layer": "L3",
+      "level": "pitfall",
+      "kind": "grep",
+      "path": "src/notice-list.css",
+      "pattern": "#[0-9a-fA-F]{3,6}\\b|box-shadow",
+      "expect": "absent",
+      "description": "ANTI-1: no raw colors or card shadows in the component styles (tokens only)"
+    },
+    {
+      "id": "RB-8",
+      "requirement": "REQ-1",
+      "layer": "L3",
+      "level": "important",
+      "kind": "scan",
+      "dimension": "ui",
+      "minScore": 75,
+      "path": "src",
+      "description": "sensor ui dimension stays above its threshold on the feature source"
+    },
+    {
+      "id": "RB-9",
+      "requirement": "REQ-2",
+      "layer": "L4",
+      "level": "essential",
+      "kind": "judge",
+      "anchor": "REF-2",
+      "evidence": ".harness/tasks/notice-list/evaluation/judge-rb-9.json",
+      "description": "empty and error states each give one sentence and exactly one obvious next action, per REF-2"
+    },
+    {
+      "id": "RB-10",
+      "requirement": "REQ-2",
+      "layer": "L4",
+      "level": "pitfall",
+      "kind": "command",
+      "command": "node --test --test-name-pattern=\"real buttons\" test/render.test.js",
+      "description": "actions are focusable type=button elements (keyboard reachable, never submit a form)"
+    },
+    {
+      "id": "RB-11",
+      "requirement": "REQ-2",
+      "layer": "L4",
+      "level": "optional",
+      "kind": "grep",
+      "path": "src/notice-list.js",
+      "pattern": "aria-busy=\\\"true\\\"",
+      "expect": "present",
+      "description": "loading state is announced to assistive tech"
+    }
+  ],
+  "qualityWaivers": [
+    {
+      "requirement": "REQ-3",
+      "reason": "Escaping has no visual or interaction surface of its own; it is fully decided by the RB-5 pitfall command."
+    }
+  ],
+  "e2eCategories": {
+    "core": 2,
+    "negative": 2,
+    "boundary": 1,
+    "crossFeature": 1,
+    "persistence": 1,
+    "uiJourney": 1,
+    "na": {
+      "crossFeature": "read-only list; no other feature reads or writes notices in this scope",
+      "persistence": "non-goal: read state is not stored by this feature"
+    }
+  }
+}

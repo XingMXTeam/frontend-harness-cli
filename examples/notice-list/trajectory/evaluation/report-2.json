@@ -1,0 +1,156 @@
+{
+  "at": "<time>",
+  "verdict": "pass",
+  "verdictReason": "score",
+  "score": 1,
+  "passScore": 0.9,
+  "layers": {
+    "L1": {
+      "score": 1,
+      "weight": 0.4
+    },
+    "L2": {
+      "score": 1,
+      "weight": 0.25
+    },
+    "L3": {
+      "score": 1,
+      "weight": 0.2
+    },
+    "L4": {
+      "score": 1,
+      "weight": 0.15
+    }
+  },
+  "vetoed": [],
+  "results": [
+    {
+      "id": "RB-1",
+      "requirement": "REQ-1",
+      "level": "essential",
+      "kind": "command",
+      "layer": "L1",
+      "score": 1,
+      "detail": "exit=0 # skipped 0 | # todo 0 | # duration_ms 65.345139"
+    },
+    {
+      "id": "RB-2",
+      "requirement": "REQ-1",
+      "level": "essential",
+      "kind": "command",
+      "layer": "L1",
+      "score": 1,
+      "detail": "exit=0 # skipped 0 | # todo 0 | # duration_ms 74.233482"
+    },
+    {
+      "id": "RB-12",
+      "requirement": "REQ-3",
+      "level": "essential",
+      "kind": "grep",
+      "layer": "L1",
+      "score": 1,
+      "detail": "pattern /escapeHtml\\(n\\.title\\)/ in src/notice-list.js: found, expected present"
+    },
+    {
+      "id": "RB-13",
+      "requirement": "REQ-1",
+      "level": "pitfall",
+      "kind": "command",
+      "layer": "L1",
+      "score": 1,
+      "detail": "exit=0 # skipped 0 | # todo 0 | # duration_ms 64.809745"
+    },
+    {
+      "id": "RB-3",
+      "requirement": "REQ-2",
+      "level": "essential",
+      "kind": "command",
+      "layer": "L2",
+      "score": 1,
+      "detail": "exit=0 # skipped 0 | # todo 0 | # duration_ms 59.969456"
+    },
+    {
+      "id": "RB-4",
+      "requirement": "REQ-2",
+      "level": "pitfall",
+      "kind": "command",
+      "layer": "L2",
+      "score": 1,
+      "detail": "exit=0 # skipped 0 | # todo 0 | # duration_ms 57.541186"
+    },
+    {
+      "id": "RB-5",
+      "requirement": "REQ-3",
+      "level": "pitfall",
+      "kind": "command",
+      "layer": "L2",
+      "score": 1,
+      "detail": "exit=0 # skipped 0 | # todo 0 | # duration_ms 70.820307"
+    },
+    {
+      "id": "RB-6",
+      "requirement": "REQ-1",
+      "level": "essential",
+      "kind": "judge",
+      "layer": "L3",
+      "score": 1,
+      "detail": "judge: Rows match REF-1: one notice per row, unread rows bold with an accent dot (2 of 3), muted time at the row end, 12px row padding from --space-3, no card chrome (ANTI-1 absent). Long titles now wrap (overflow-wrap: anywhere; no nowrap/ellipsis left in .notice__title), so E2E-5's 300-character t"
+    },
+    {
+      "id": "RB-7",
+      "requirement": "REQ-1",
+      "level": "pitfall",
+      "kind": "grep",
+      "layer": "L3",
+      "score": 1,
+      "detail": "pattern /#[0-9a-fA-F]{3,6}\\b|box-shadow/ in src/notice-list.css: not found, expected absent"
+    },
+    {
+      "id": "RB-8",
+      "requirement": "REQ-1",
+      "level": "important",
+      "kind": "scan",
+      "layer": "L3",
+      "score": 1,
+      "detail": "scan ui=100 (min 75) on src; sensor total=88"
+    },
+    {
+      "id": "RB-9",
+      "requirement": "REQ-2",
+      "level": "essential",
+      "kind": "judge",
+      "layer": "L4",
+      "score": 1,
+      "detail": "judge: Empty: 'No notices yet.' + one Refresh button. Error: danger-colored sentence + one Retry button, and never the empty sentence (RL-2 holds). Both actions are type=button and keyboard reachable."
+    },
+    {
+      "id": "RB-10",
+      "requirement": "REQ-2",
+      "level": "pitfall",
+      "kind": "command",
+      "layer": "L4",
+      "score": 1,
+      "detail": "exit=0 # skipped 0 | # todo 0 | # duration_ms 62.48219"
+    },
+    {
+      "id": "RB-11",
+      "requirement": "REQ-2",
+      "level": "optional",
+      "kind": "grep",
+      "layer": "L4",
+      "score": 1,
+      "detail": "pattern /aria-busy=\\\"true\\\"/ in src/notice-list.js: found, expected present"
+    }
+  ],
+  "refinementSuggestions": {
+    "added": [
+      "RS-2",
+      "RS-3"
+    ],
+    "pending": [
+      "RS-2",
+      "RS-3"
+    ],
+    "invalid": []
+  }
+}

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Notices</title>
+  <link rel="stylesheet" href="src/tokens.css">
+  <link rel="stylesheet" href="src/notice-list.css">
+</head>
+<body>
+  <main id="app" data-testid="notice-list"></main>
+  <script type="module">
+    import { renderNoticeList } from './src/notice-list.js';
+    import fixtures from './fixtures.js';
+    const state = new URLSearchParams(location.search).get('state') ?? 'ready';
+    document.getElementById('app').innerHTML = renderNoticeList(fixtures[state] ?? fixtures.ready);
+  </script>
+</body>
+</html>
