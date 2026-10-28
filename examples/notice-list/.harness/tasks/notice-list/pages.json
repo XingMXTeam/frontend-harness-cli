@@ -1,0 +1,9 @@
+{
+  "baseUrl": "http://localhost:5173",
+  "viewport": { "width": 1280, "height": 800 },
+  "pages": [
+    { "name": "list", "route": "/?state=ready", "waitFor": ".notices__list" },
+    { "name": "empty", "route": "/?state=empty", "waitFor": ".notices__empty" },
+    { "name": "error", "route": "/?state=error", "waitFor": ".notices__error" }
+  ]
+}

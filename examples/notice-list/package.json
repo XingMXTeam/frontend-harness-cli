@@ -1,0 +1,10 @@
+{
+  "name": "notice-list-example",
+  "private": true,
+  "type": "module",
+  "description": "A minimal real feature driven through frontend-harness-cli: a notice list with ready / empty / loading / error states.",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "serve": "node scripts/serve.mjs"
+  }
+}

@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { loadState } from './state.js';
-import { nextAction } from './orchestrate.js';
+import { nextAction, tryLoadRubric } from './orchestrate.js';
+import { buildRolePacket, roleFor, roleInstructions, evaluatorLeaks } from './roles.js';
 
 /**
  * The driver: what turns the kernel into a long-running system.
@@ -16,6 +17,13 @@ import { nextAction } from './orchestrate.js';
  *   3. Repeat until a stop condition: done, paused (budget), needs-human
  *      (clarification — the driver will not fabricate user answers),
  *      max-steps, timeout, agent-failing, or stalled.
+ *
+ * Since v0.5 every agent step is role-scoped (see roles.js): the packet
+ * is built per role from a whitelist, the role's definition is prepended
+ * to the prompt, HARNESS_ROLE is set for the child (kernel commands refuse
+ * to run in the wrong role), and an evaluator step precedes every eval of
+ * a rubric with judge items. An evaluator packet that would carry an
+ * implementer record stops the run instead of being sent.
  *
  * The driver keeps NO state of its own beyond loop counters. Kill it at
  * any point and `harness run` again — the kernel's files decide where
@@ -37,31 +45,30 @@ export function stateSignature(state) {
     macro: state.macroCycle.current,
     passes: state.consecutivePasses,
     remediation: state.remediation ?? [],
+    remediationFixed: state.remediationFixedAt ?? null,
+    refinements: (state.pendingRefinements ?? []).length,
     lastEval: state.lastEvaluation ? `${state.lastEvaluation.verdict}:${state.lastEvaluation.score}` : null,
   });
 }
 
-export function buildPacket(root, state, action) {
-  return {
-    feature: state.feature,
-    action: action.action,
-    phase: action.phase,
-    instruction: action.instruction,
-    task: action.task ?? null,
-    items: action.items ?? null,
-    root,
-  };
+/** The packet an agent step receives: role-scoped, built by the kernel (see roles.js). */
+export function buildPacket(root, state, action, opts = {}) {
+  const rubric = opts.rubric !== undefined ? opts.rubric : tryLoadRubric(root, state.feature);
+  return buildRolePacket(root, state, action, { rubric, stepId: opts.stepId ?? null });
 }
 
 export function buildPrompt(packet) {
+  const role = packet.role ?? roleFor(packet.action);
+  const roleText = role ? roleInstructions(role) : '';
   return [
-    'You are the host agent for frontend-harness-cli, running headless under `harness run`.',
+    `You are the ${role ?? 'host'} agent for frontend-harness-cli, running headless under \`harness run\`.`,
     'Hard rules: the CLI is the only source of truth for workflow state; never edit .harness/**/state.json by hand;',
-    'do exactly the action in the packet — no skipping ahead, no unrelated changes;',
-    'the implementer works from the plan and the task, NOT from rubric.json;',
+    'do exactly the action in the packet — no skipping ahead, no unrelated changes, no work that belongs to another role;',
     'commit precisely (git add <paths>, never git add -A) when the packet asks for a commit;',
-    'when the packet names harness commands, run them and report their output honestly.',
+    'when the packet names harness commands, run them and report their output honestly;',
+    'end the step by running the harness command that records your result — a summary is not a result.',
     '',
+    ...(roleText ? ['ROLE DEFINITION:', roleText, ''] : []),
     'PACKET:',
     JSON.stringify(packet, null, 2),
   ].join('\n');
@@ -89,12 +96,16 @@ export function makeAgentExec(template, { stepTimeoutMs }) {
       shell: false,
       timeout: stepTimeoutMs,
       input: hasPlaceholder ? undefined : prompt,
-      env: { ...process.env, HARNESS_FEATURE: packet.feature, HARNESS_ACTION: packet.action },
+      env: { ...process.env, HARNESS_FEATURE: packet.feature, HARNESS_ACTION: packet.action, HARNESS_ROLE: packet.role ?? '', HARNESS_STEP_ID: packet.stepId ?? '' },
     });
   };
 }
 
-const AGENT_ACTIONS = new Set(['implement-task', 'remediate', 'confirm-evaluation']);
+const AGENT_ACTIONS = new Set(['implement-task', 'remediate', 'replan', 'confirm-evaluation']);
+
+function hasJudgeItems(root, feature) {
+  return Boolean(tryLoadRubric(root, feature)?.items?.some((i) => i.kind === 'judge'));
+}
 
 /**
  * Run the loop. deps.execKernel(root,args) / deps.execAgent(root,packet)
@@ -141,7 +152,8 @@ export function runLoop(root, feature, config, deps, opts = {}) {
       continue;
     }
 
-    if (action.action === 'evaluate') {
+    if (action.action === 'evaluate' && !hasJudgeItems(root, feature)) {
+      // Purely deterministic rubric: the kernel evaluates, no agent needed.
       const r = deps.execKernel(root, ['eval', feature, '--json']);
       // eval exits 1 on a failing verdict — that is routing information,
       // not a driver error. Only an unparseable result is a block.
@@ -153,10 +165,16 @@ export function runLoop(root, feature, config, deps, opts = {}) {
       continue;
     }
 
-    if (AGENT_ACTIONS.has(action.action)) {
+    if (AGENT_ACTIONS.has(action.action) || action.action === 'evaluate') {
       if (steps >= maxSteps) return finish('max-steps', `agent step budget of ${maxSteps} exhausted — re-run \`harness run ${feature}\` to continue from state`);
       const before = stateSignature(state);
-      const packet = buildPacket(root, state, action);
+      const packet = buildPacket(root, state, action, { stepId: `${feature}:${state.macroCycle.current}:${steps + 1}:${action.action}` });
+      if (packet.role === 'evaluator') {
+        // Tripwire: the isolation is a property of the packet. If the
+        // implementer's record ever reaches it, stop rather than score.
+        const leaks = evaluatorLeaks(root, state, packet);
+        if (leaks.length) return finish('blocked', `evaluator packet would leak implementer records: ${leaks.join(', ')}`);
+      }
       const r = deps.execAgent(root, packet);
       steps += 1;
       if (r.error || r.status !== 0) {
@@ -169,7 +187,7 @@ export function runLoop(root, feature, config, deps, opts = {}) {
       failures = 0;
       // A fresh confirmation evaluation is kernel work once the agent has
       // produced its evidence — run it here so the loop actually closes.
-      if (action.action === 'confirm-evaluation') {
+      if (action.action === 'confirm-evaluation' || action.action === 'evaluate') {
         const er = deps.execKernel(root, ['eval', feature, '--json']);
         let verdict = null;
         try { verdict = JSON.parse(er.stdout).evaluation.verdict; } catch { /* below */ }

@@ -4,6 +4,8 @@ import path from 'node:path';
 import { featureDir } from './config.js';
 import { resolveFromRoot } from './git.js';
 import { runScan } from './scan.js';
+import { layerKey } from './rubric.js';
+export { DEFAULT_LAYER_WEIGHTS, layerKey } from './rubric.js';
 
 /**
  * Run one rubric item. Returns { score: 0 | 0.5 | 1, detail }.
@@ -12,7 +14,7 @@ import { runScan } from './scan.js';
  * exception: an evaluator agent writes { score, note } to the item's evidence
  * file, and a judge item with no evidence scores 0.
  */
-export function runItem(root, item, timeoutMs, scanCache = new Map()) {
+export function runItem(root, item, timeoutMs, scanCache = new Map(), opts = {}) {
   switch (item.kind) {
     case 'scan': {
       // Sensor input, not a second verdict: read one dimension score from
@@ -53,18 +55,75 @@ export function runItem(root, item, timeoutMs, scanCache = new Map()) {
     case 'judge': {
       const p = resolveFromRoot(root, item.evidence);
       if (!existsSync(p)) return { score: 0, detail: `no judge evidence at ${item.evidence} — unevaluated items score 0` };
+      // Freshness: evidence older than the work it judges (or, in the
+      // confirmation pass, older than the previous evaluation) was not
+      // produced by a fresh evaluator for this state of the code.
+      if (opts.freshSince && statSync(p).mtimeMs < opts.freshSince) {
+        return { score: 0, detail: `stale judge evidence at ${item.evidence}: written before ${new Date(opts.freshSince).toISOString()} (${opts.freshReason ?? 'the latest change'}) — regenerate it in a fresh evaluator context` };
+      }
+      let ev;
       try {
-        const ev = JSON.parse(readFileSync(p, 'utf8'));
-        const s = Number(ev.score);
-        if (![0, 0.5, 1].includes(s)) return { score: 0, detail: `judge evidence score must be 0, 0.5 or 1 (got ${ev.score})` };
-        return { score: s, detail: `judge: ${ev.note ?? ''}`.slice(0, 300) };
+        ev = JSON.parse(readFileSync(p, 'utf8'));
       } catch {
         return { score: 0, detail: `judge evidence at ${item.evidence} is not valid JSON` };
       }
+      const s = Number(ev.score);
+      if (![0, 0.5, 1].includes(s)) return { score: 0, detail: `judge evidence score must be 0, 0.5 or 1 (got ${ev.score})` };
+      const artifacts = Array.isArray(ev.artifacts) ? ev.artifacts : [];
+      const missing = artifacts.filter((a) => !existsSync(resolveFromRoot(root, a)));
+      if (missing.length) return { score: 0, detail: `judge evidence cites missing artifact(s): ${missing.join(', ')}` };
+      // A red line declared "(check: screenshot)" is judged from pixels:
+      // its judge item must cite at least one real PNG screenshot.
+      const anchor = opts.vision?.get?.(item.anchor);
+      if (anchor && anchor.type === 'RL' && /check\s*:\s*screenshot/i.test(anchor.text)) {
+        const minBytes = opts.minScreenshotBytes ?? 2048;
+        const real = artifacts.filter((a) => /\.png$/i.test(a) && isRealPng(resolveFromRoot(root, a), minBytes));
+        if (!real.length) return { score: 0, detail: `${item.anchor} is a screenshot-checked red line; the judge evidence must cite at least one real PNG (>= ${minBytes}B) in "artifacts" — run harness capture` };
+      }
+      return { score: s, detail: `judge: ${ev.note ?? ''}`.slice(0, 300) };
     }
     default:
       return { score: 0, detail: `unknown kind ${item.kind}` };
   }
+}
+
+export function isRealPng(file, minBytes) {
+  if (!existsSync(file)) return false;
+  const buf = readFileSync(file);
+  return buf.length >= minBytes && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+}
+
+/**
+ * Weighted score. Flat mode (default): sum(score*weight)/sum(weight) over
+ * non-pitfall items. Layered mode (rubric.layerWeights set): each layer
+ * L1–L4 is scored on its own, then combined with the layer weights,
+ * renormalized over the layers that actually have items.
+ */
+export function weightedScore(rubric, results) {
+  const scored = results.filter((r) => r.item.level !== 'pitfall');
+  const round = (x) => Math.round(x * 1000) / 1000;
+  if (!rubric.layerWeights) {
+    const denom = scored.reduce((s, r) => s + r.item.weight, 0);
+    const numer = scored.reduce((s, r) => s + r.score * r.item.weight, 0);
+    return { score: denom === 0 ? 0 : round(numer / denom), layers: null };
+  }
+  const layers = {};
+  for (const r of scored) {
+    const k = layerKey(r.item.layer);
+    layers[k] ??= { numer: 0, denom: 0, weight: rubric.layerWeights[k] ?? 0 };
+    layers[k].numer += r.score * r.item.weight;
+    layers[k].denom += r.item.weight;
+  }
+  let total = 0;
+  let wsum = 0;
+  const out = {};
+  for (const [k, l] of Object.entries(layers)) {
+    const ls = l.denom === 0 ? 0 : l.numer / l.denom;
+    out[k] = { score: round(ls), weight: l.weight };
+    total += ls * l.weight;
+    wsum += l.weight;
+  }
+  return { score: wsum === 0 ? 0 : round(total / wsum), layers: out };
 }
 
 /**
@@ -78,10 +137,11 @@ export function runItem(root, item, timeoutMs, scanCache = new Map()) {
  *  2. Any essential item scoring 0 = veto.
  *  3. Otherwise the weighted score must reach config passScore.
  */
-export function evaluateRubric(root, rubric, config) {
+export function evaluateRubric(root, rubric, config, opts = {}) {
   const timeoutMs = config.evaluation.commandTimeoutMs;
   const scanCache = new Map(); // one sensor run per target path, shared by all scan items
-  const results = rubric.items.map((item) => ({ item, ...runItem(root, item, timeoutMs, scanCache) }));
+  const itemOpts = { ...opts, minScreenshotBytes: opts.minScreenshotBytes ?? config.evidence?.minScreenshotBytes ?? 2048 };
+  const results = rubric.items.map((item) => ({ item, ...runItem(root, item, timeoutMs, scanCache, itemOpts) }));
 
   const vetoed = [];
   for (const r of results) {
@@ -89,19 +149,19 @@ export function evaluateRubric(root, rubric, config) {
     if (r.item.level === 'essential' && r.score === 0) vetoed.push({ id: r.item.id, reason: `essential item failed: ${r.detail}` });
   }
 
-  const scored = results.filter((r) => r.item.level !== 'pitfall');
-  const denom = scored.reduce((s, r) => s + r.item.weight, 0);
-  const numer = scored.reduce((s, r) => s + r.score * r.item.weight, 0);
-  const score = denom === 0 ? 0 : Math.round((numer / denom) * 1000) / 1000;
+  const { score, layers } = weightedScore(rubric, results);
 
   const verdict = vetoed.length > 0 ? 'fail' : score >= config.evaluation.passScore ? 'pass' : 'fail';
   return {
     at: Date.now(),
     verdict,
+    // Why it failed, in the fixed vocabulary the routing table uses.
+    verdictReason: vetoed.length > 0 ? 'veto' : verdict === 'pass' ? 'score' : 'below-pass-score',
     score,
     passScore: config.evaluation.passScore,
+    ...(layers ? { layers } : {}),
     vetoed,
-    results: results.map((r) => ({ id: r.item.id, requirement: r.item.requirement ?? null, level: r.item.level, kind: r.item.kind, score: r.score, detail: r.detail })),
+    results: results.map((r) => ({ id: r.item.id, requirement: r.item.requirement ?? null, level: r.item.level, kind: r.item.kind, ...(r.item.layer ? { layer: r.item.layer } : {}), score: r.score, detail: r.detail })),
   };
 }
 

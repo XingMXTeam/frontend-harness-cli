@@ -17,16 +17,21 @@ import { DEFAULT_CONFIG, HARNESS_DIR, configPath, featureDir, harnessDir, loadCo
 import { createState, loadState, saveState, record, withLock } from '../src/state.js';
 import { loadRubric, rubricPath } from '../src/rubric.js';
 import { evaluateRubric, writeReport, runGateCommands } from '../src/evaluate.js';
-import { nextAction, applyEvaluation, checkCoverage } from '../src/orchestrate.js';
+import { nextAction, applyEvaluation, checkCoverage, VERDICT_ROUTES } from '../src/orchestrate.js';
+import { loadVision } from '../src/vision.js';
+import { collectRefinements, recordRefinements, rubricFingerprint, rubricLevels, looseningChanges, checkDecisions } from '../src/refine.js';
+import { ROLES, roleInstructions, stripFrontMatter } from '../src/roles.js';
+import { capturePages, comparePages, loadDiffLibs, loadRunManifest, adoptBaselines, defaultBaselineDir, loadPages, MissingPeerError, DEFAULT_MIN_BYTES } from '../src/evidence.js';
 import { isGitRepo, verifySha, headSha } from '../src/git.js';
 import { runScan, formatReport, loadScanConfig } from '../src/scan.js';
 import { verifyZone } from '../src/gate/zone.js';
 import { checkScope } from '../src/gate/scope.js';
 import { readPreviousReport, appendHistory, computeTrend } from '../src/gate/history.js';
 import { scoreSkillEval } from '../src/skills-eval.js';
-import { runLoop, AGENT_TEMPLATES, makeKernelExec, makeAgentExec } from '../src/run.js';
+import { runLoop, AGENT_TEMPLATES, makeKernelExec, makeAgentExec, buildPacket } from '../src/run.js';
 
 const TEMPLATES = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'templates');
+const DOCS_SRC = path.join(TEMPLATES, '..', 'docs'); // repo docs/ is the single source; init copies it to .harness/docs/
 const root = process.cwd();
 
 class CliError extends Error {}
@@ -42,6 +47,18 @@ function arg(flag, fallback = null) {
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
 }
 const has = (flag) => process.argv.includes(flag);
+
+/**
+ * Role guard. Under `harness run` every agent step carries HARNESS_ROLE.
+ * Kernel commands that record another role's result refuse to run inside
+ * the wrong role — the evaluator cannot mark tasks done, the developer
+ * cannot score its own work, nobody but the orchestrator runs eval.
+ */
+function requireRole(command, allowed) {
+  const role = process.env.HARNESS_ROLE;
+  if (!role) return; // interactive / orchestrator context
+  if (!allowed.includes(role)) fail(`\`harness ${command}\` is not available to the ${role} role (allowed: ${allowed.length ? allowed.join(', ') : 'orchestrator only'}). Finish your step and return; the orchestrator runs the next command.`);
+}
 const jsonOut = () => has('--json');
 function print(obj, human) {
   if (jsonOut()) console.log(JSON.stringify(obj, null, 2));
@@ -175,7 +192,7 @@ function cmdInit() {
   const stack = arg('--stack', 'node');
   const host = arg('--host', 'claude-code');
   const force = has('--force');
-  if (!['node', 'nextjs', 'vue'].includes(stack)) fail(`Unknown stack "${stack}" (node|nextjs|vue).`);
+  if (!['node', 'nextjs', 'vue', 'react'].includes(stack)) fail(`Unknown stack "${stack}" (node|nextjs|vue|react).`);
   if (!['claude-code', 'codex', 'generic'].includes(host)) fail(`Unknown host "${host}" (claude-code|codex|generic).`);
 
   const made = [];
@@ -193,6 +210,7 @@ function cmdInit() {
   if (stack === 'node') config.gateCommands = ['npm test'];
   if (stack === 'nextjs') config.gateCommands = ['npm run gate'];
   if (stack === 'vue') config.gateCommands = ['npm test'];
+  if (stack === 'react') config.gateCommands = ['npm test'];
   write(configPath(root), `${JSON.stringify(config, null, 2)}\n`);
 
   mkdirSync(harnessDir(root), { recursive: true });
@@ -201,7 +219,19 @@ function cmdInit() {
   if (existsSync(standardsDst) && !force) skipped.push(path.relative(root, standardsDst));
   else { copyFileSync(standardsSrc, standardsDst); made.push(path.relative(root, standardsDst)); }
 
+  // Shared docs the skills and role agents cite (.harness/docs/*.md).
+  for (const doc of readdirSync(DOCS_SRC).filter((f) => f.endsWith('.md'))) {
+    const dst = path.join(harnessDir(root), 'docs', doc);
+    if (existsSync(dst) && !force) skipped.push(path.relative(root, dst));
+    else { mkdirSync(path.dirname(dst), { recursive: true }); copyFileSync(path.join(DOCS_SRC, doc), dst); made.push(path.relative(root, dst)); }
+  }
+
   if (host === 'claude-code') {
+    for (const role of ROLES) {
+      const dst = path.join(root, '.claude', 'agents', `${role}.md`);
+      if (existsSync(dst) && !force) skipped.push(path.relative(root, dst));
+      else { mkdirSync(path.dirname(dst), { recursive: true }); copyFileSync(path.join(TEMPLATES, 'claude-code', 'agents', `${role}.md`), dst); made.push(path.relative(root, dst)); }
+    }
     const skillDst = path.join(root, '.claude', 'skills', 'harness', 'SKILL.md');
     if (existsSync(skillDst) && !force) skipped.push(path.relative(root, skillDst));
     else { mkdirSync(path.dirname(skillDst), { recursive: true }); copyFileSync(path.join(TEMPLATES, 'claude-code', 'SKILL.md'), skillDst); made.push(path.relative(root, skillDst)); }
@@ -212,10 +242,13 @@ function cmdInit() {
     made.push(...pack.installed.map((n) => `.claude/skills/${n}`));
     skipped.push(...pack.skipped.map((n) => `.claude/skills/${n}`));
     write(path.join(harnessDir(root), 'host-setup.md'),
-      '# Claude Code host setup\n\nRegister the session-start hook in `.claude/settings.json`:\n\n```json\n{\n  "hooks": {\n    "SessionStart": [{ "hooks": [{ "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh" }] }]\n  }\n}\n```\n\nThe `harness` skill is already installed at `.claude/skills/harness/SKILL.md`, and the bundled skills pack (plan-before-code, deterministic-eval, …) is installed alongside it. Manage the pack with `harness skills list|install`.\n');
+      '# Claude Code host setup\n\nRegister the session-start hook in `.claude/settings.json`:\n\n```json\n{\n  "hooks": {\n    "SessionStart": [{ "hooks": [{ "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh" }] }]\n  }\n}\n```\n\nThe `harness` skill is already installed at `.claude/skills/harness/SKILL.md`, the three role agents (planner, developer, evaluator) at `.claude/agents/`, and the bundled skills pack (the authoring chain clarify-requirements → write-acceptance-criteria, implement-task, e2e-testing, …) alongside them. Manage the pack with `harness skills list|install`.\n\nThe main session is the orchestrator: it runs `harness next`, dispatches the role agent the action names (`harness packet <feature>` prints that agent\'s input), and runs the kernel commands. It does not do role work itself.\n');
   } else {
+    // Instruction-level role definitions: same text, no host front matter.
+    for (const role of ROLES) write(path.join(harnessDir(root), 'agents', `${role}.md`), `${roleInstructions(role)}\n`);
+    write(path.join(harnessDir(root), 'protocol.md'), `${stripFrontMatter(readFileSync(path.join(TEMPLATES, 'claude-code', 'SKILL.md'), 'utf8')).trim()}\n`);
     write(path.join(harnessDir(root), 'host-setup.md'),
-      `# Host setup (${host})\n\nAt the start of every session, the host agent must run \`harness next <feature>\` and follow the returned action. Add that sentence to your agent instructions file (AGENTS.md / equivalent). The harness skill text for reference is in the frontend-harness-cli package: templates/claude-code/SKILL.md.\n`);
+      `# Host setup (${host})\n\nAdd this to your agent instructions file (AGENTS.md or equivalent):\n\n> At the start of every session run \`harness next <feature>\` and follow the returned action. The rules are in \`.harness/protocol.md\`. Each action belongs to one role — clarify/replan: planner, implement-task/remediate: developer, evaluate/confirm-evaluation: evaluator — whose instructions are in \`.harness/agents/<role>.md\`. When your host supports separate sessions or sub-agents, run each role in its own context and give it only \`harness packet <feature>\`. Never stop at a summary: after every verdict, run the next action.\n\nThe authoring and evaluation skills are installable with \`harness skills install --dir <your skills dir>\`; their text is plain Markdown any host can read.\n`);
   }
 
   print({ ok: true, stack, host, created: made, skipped },
@@ -271,6 +304,9 @@ async function cmdClarifyDone() {
     state.tasks = tasks.map((t) => ({ id: t.id, title: t.title, requirements: t.requirements ?? [], status: 'pending', attempts: 0, commitSha: null }));
     state.clarificationComplete = true;
     state.phase = 'implement';
+    // Lock the contract: later replans may tighten it, loosening needs a human.
+    state.rubricBaseline = rubricLevels(loadRubric(root, feature));
+    state.rubricHash = rubricFingerprint(root, feature);
     record(state, { event: 'clarify-done', tasks: state.tasks.length });
     saveState(root, state);
     print({ ok: true, feature, tasks: state.tasks.length }, `Clarification locked for "${feature}": rubric coverage OK, ${state.tasks.length} task(s) queued. Phase -> implement.`);
@@ -305,6 +341,7 @@ async function cmdTaskDone() {
   const feature = process.argv[3];
   const taskId = process.argv[4];
   if (!feature || !taskId) fail('Usage: harness task-done <feature> <taskId> [--sha <commit>]');
+  requireRole('task-done', ['developer']);
   const config = loadConfig(root);
   await withLock(root, feature, async () => {
     const state = loadState(root, feature);
@@ -340,6 +377,7 @@ async function cmdTaskDone() {
 // ─── eval / gate ─────────────────────────────────────────────────────────────
 async function cmdEval() {
   const feature = process.argv[3];
+  requireRole('eval', []);
   const config = loadConfig(root);
   let verdict = null;
   await withLock(root, feature, async () => {
@@ -347,11 +385,33 @@ async function cmdEval() {
     if (!state.clarificationComplete) fail('Clarification is not complete; evaluation has no anchor yet. Finish clarify, then harness clarify-done.');
     const { ok, gaps } = checkCoverage(root, state);
     if (!ok) fail(`Rubric coverage gate failed:\n${gaps.map((g) => `  - ${g.requirement}: ${g.problem}`).join('\n')}`);
-    if (state.phase === 'implement' && state.tasks.some((t) => t.status !== 'done') && !state.remediation?.length) {
-      fail('Not all tasks are recorded done yet. Evaluation runs on completed work: harness next ' + feature);
+    const pendingTasks = state.tasks.filter((t) => t.status !== 'done');
+    if (pendingTasks.length) {
+      fail(`Not all tasks are recorded done yet (${pendingTasks.map((t) => t.id).join(', ')}). Evaluation runs on completed work: harness next ${feature}`);
+    }
+    if (state.pendingRefinements?.length && state.remediation?.length) {
+      fail(`${state.pendingRefinements.length} rubric refinement suggestion(s) are unanswered. The planner replans first: harness next ${feature}`);
     }
     const rubric = loadRubric(root, feature);
-    const evaluation = evaluateRubric(root, rubric, config);
+    // Judge evidence must postdate the work it judges and the previous
+    // evaluation — a confirmation pass cannot reuse the last pass's notes.
+    const lastWork = [...state.history].reverse().find((h) => ['task-done', 'remediation-fixed', 'replanned'].includes(h.event));
+    const candidates = [
+      lastWork ? { at: lastWork.at, why: `${lastWork.event}${lastWork.task ? ` ${lastWork.task}` : ''}` } : null,
+      state.lastEvaluation ? { at: state.lastEvaluation.at, why: 'the previous evaluation' } : null,
+    ].filter(Boolean).sort((a, b) => b.at - a.at);
+    const fresh = candidates[0] ?? null;
+    const evaluation = evaluateRubric(root, rubric, config, {
+      freshSince: fresh?.at ?? null,
+      freshReason: fresh?.why ?? null,
+      vision: loadVision(root, feature),
+    });
+
+    // Rubric evolution: the evaluator's suggestions are recorded, never lost.
+    const refinements = collectRefinements(root, feature, rubric);
+    const added = recordRefinements(state, refinements.found, evaluation.at);
+    evaluation.refinementSuggestions = { added: added.map((a) => a.id), pending: (state.pendingRefinements ?? []).map((a) => a.id), invalid: refinements.invalid };
+    if (added.length) record(state, { event: 'rubric-refinements-recorded', ids: added.map((a) => a.id) });
     const reportFile = writeReport(root, feature, evaluation);
 
     const willFinish = state.phase === 'verify' || state.consecutivePasses + 1 >= config.autoStop.requiredStablePasses;
@@ -360,11 +420,149 @@ async function cmdEval() {
       : { passed: true, failedAt: null, steps: [], skipped: true };
     const routing = applyEvaluation(root, state, config, evaluation, gateResult);
     saveState(root, state);
+    const next = nextAction(root, state, config);
+    routing.next = next.action;
     verdict = evaluation.verdict;
     print({ evaluation, gate: gateResult, routing, reportFile: path.relative(root, reportFile) },
-      `Evaluation: ${evaluation.verdict.toUpperCase()} score=${evaluation.score} (pass >= ${evaluation.passScore})${evaluation.vetoed.length ? `\nVETOED: ${evaluation.vetoed.map((v) => `${v.id} — ${v.reason}`).join('; ')}` : ''}\nRouted: ${routing.routed}${routing.reason ? ` (${routing.reason})` : ''}\nReport: ${path.relative(root, reportFile)}\nPhase now: ${state.phase}. Next: harness next ${feature}`);
+      `Evaluation: ${evaluation.verdict.toUpperCase()} score=${evaluation.score} (pass >= ${evaluation.passScore})${evaluation.layers ? ` layers ${Object.entries(evaluation.layers).map(([k, v]) => `${k}=${v.score}`).join(' ')}` : ''}${evaluation.vetoed.length ? `\nVETOED: ${evaluation.vetoed.map((v) => `${v.id} — ${v.reason}`).join('; ')}` : ''}${added.length ? `\nRubric refinement suggestions recorded: ${added.map((a) => a.id).join(', ')}` : ''}${refinements.invalid.length ? `\nIgnored malformed suggestions: ${refinements.invalid.map((i) => `${i.source}: ${i.error}`).join('; ')}` : ''}\nRouted: ${routing.routed}${routing.reason ? ` (${routing.reason})` : ''}\nReport: ${path.relative(root, reportFile)}\nPhase now: ${state.phase}. ${next.action === 'none' ? 'Feature done — report it: harness report ' + feature : next.action === 'human-decision' ? 'Paused — surface the reason to the user.' : `Next action: ${next.action} — dispatch it now; do not stop at this summary.`}`);
   });
   if (verdict !== 'pass') process.exitCode = 1;
+}
+
+// ─── remediate-done / replan-done ────────────────────────────────────────────
+async function cmdRemediateDone() {
+  const feature = process.argv[3];
+  if (!feature) fail('Usage: harness remediate-done <feature> [--sha <commit>]');
+  requireRole('remediate-done', ['developer']);
+  const config = loadConfig(root);
+  await withLock(root, feature, async () => {
+    const state = loadState(root, feature);
+    if (!state.remediation?.length) fail(`Feature "${feature}" has no open remediation items.`);
+    let sha = arg('--sha');
+    if (isGitRepo(root) && config.git.requireCommitPerTask) {
+      if (!sha) fail('This is a git repo and requireCommitPerTask is on: commit the fix precisely, then pass --sha <commit>.');
+      if (!verifySha(root, sha)) fail(`Commit SHA "${sha}" does not verify in this repo (git rev-parse --verify failed). Placeholder SHAs are not accepted.`);
+      sha = sha.toLowerCase();
+    }
+    state.remediationFixedAt = Date.now();
+    record(state, { event: 'remediation-fixed', items: state.remediation, commitSha: sha ?? null });
+    saveState(root, state);
+    print({ ok: true, feature, items: state.remediation, commitSha: sha ?? null }, `Remediation of ${state.remediation.join(', ')} recorded${sha ? ` @ ${sha}` : ''}. Next: a fresh evaluator judges it — harness next ${feature}`);
+  });
+}
+
+async function cmdReplanDone() {
+  const feature = process.argv[3];
+  if (!feature) fail('Usage: harness replan-done <feature>');
+  requireRole('replan-done', ['planner']);
+  await withLock(root, feature, async () => {
+    const state = loadState(root, feature);
+    const pending = state.pendingRefinements ?? [];
+    if (!pending.length) fail(`Feature "${feature}" has no pending rubric refinement suggestions to answer.`);
+    const decisionsFile = path.join(featureDir(root, feature), 'replan-decisions.json');
+    if (!existsSync(decisionsFile)) fail(`Write ${path.relative(root, decisionsFile)}: [{"id": "RS-1", "decision": "accepted"|"rejected", "note": "..."}] — one entry per pending suggestion (${pending.map((p) => p.id).join(', ')}).`);
+    let decisions;
+    try { decisions = JSON.parse(readFileSync(decisionsFile, 'utf8')); } catch (e) { fail(`replan-decisions.json is not valid JSON: ${e.message}`); }
+    const check = checkDecisions(pending, decisions);
+    if (!check.ok) fail(`Replan is incomplete:\n${check.problems.map((p) => `  - ${p}`).join('\n')}`);
+
+    const { ok, gaps, rubric } = checkCoverage(root, state);
+    if (!ok) fail(`Rubric coverage gate failed after replan:\n${gaps.map((g) => `  - ${g.requirement}: ${g.problem}`).join('\n')}`);
+    const loosened = looseningChanges(state.rubricBaseline, rubric);
+    if (loosened.length && process.env.GATE_HUMAN_CONFIRM !== 'yes') {
+      fail(`The replan loosens the locked rubric:\n${loosened.map((l) => `  - ${l}`).join('\n')}\nThe rubric may only tighten automatically. A human reviews the diff and re-runs with GATE_HUMAN_CONFIRM=yes.`);
+    }
+    const accepted = pending.filter((p) => check.byId.get(p.id).decision === 'accepted');
+    const hash = rubricFingerprint(root, feature);
+    const tasksFile = path.join(featureDir(root, feature), 'tasks.json');
+    const defs = JSON.parse(readFileSync(tasksFile, 'utf8'));
+    const known = new Set(state.tasks.map((t) => t.id));
+    const newTasks = defs.filter((t) => !known.has(t.id));
+    if (accepted.length && hash === state.rubricHash && newTasks.length === 0) {
+      fail(`${accepted.length} suggestion(s) marked accepted but rubric.json and tasks.json are unchanged. Apply them, or reject them with a reason.`);
+    }
+    for (const t of newTasks) state.tasks.push({ id: t.id, title: t.title, requirements: t.requirements ?? [], status: 'pending', attempts: 0, commitSha: null });
+    state.refinementLog ??= [];
+    for (const p of pending) state.refinementLog.push({ ...p, decision: check.byId.get(p.id).decision, note: check.byId.get(p.id).note ?? null, decidedAt: Date.now() });
+    state.pendingRefinements = [];
+    state.rubricBaseline = rubricLevels(rubric);
+    state.rubricHash = hash;
+    record(state, { event: 'replanned', accepted: accepted.map((a) => a.id), rejected: pending.filter((p) => !accepted.includes(p)).map((p) => p.id), newTasks: newTasks.map((t) => t.id), loosenedWithHuman: loosened.length ? loosened : undefined });
+    saveState(root, state);
+    print({ ok: true, feature, accepted: accepted.map((a) => a.id), newTasks: newTasks.map((t) => t.id) },
+      `Replan recorded for "${feature}": ${accepted.length} accepted, ${pending.length - accepted.length} rejected, ${newTasks.length} new task(s). Rubric coverage OK. Next: harness next ${feature}`);
+  });
+}
+
+// ─── packet: the role-scoped input for the next agent step ───────────────────
+function cmdPacket() {
+  const feature = process.argv[3];
+  if (!feature) fail('Usage: harness packet <feature> [--json]');
+  const config = loadConfig(root);
+  const state = loadState(root, feature);
+  const action = nextAction(root, state, config);
+  const packet = buildPacket(root, state, action);
+  print(packet, `Role: ${packet.role ?? '(kernel / human step)'}\nAction: ${packet.action}\n${JSON.stringify(packet, null, 2)}`);
+}
+
+// ─── capture / visual: real screenshots + pixel diff ─────────────────────────
+async function cmdCapture() {
+  const feature = process.argv[3];
+  if (!feature) fail('Usage: harness capture <feature> [--base-url <url>] [--run-id <id>] [--pages <file>] [--min-bytes 2048] [--allow-fallback] [--skip-probe]');
+  loadState(root, feature);
+  let manifest;
+  try {
+    manifest = await capturePages(root, feature, {
+      baseUrl: arg('--base-url'),
+      runId: arg('--run-id'),
+      pagesFile: arg('--pages'),
+      minBytes: Number(arg('--min-bytes', String(DEFAULT_MIN_BYTES))),
+      allowFallback: has('--allow-fallback'),
+      skipProbe: has('--skip-probe'),
+    });
+  } catch (e) {
+    if (e instanceof MissingPeerError) fail(e.message);
+    throw e;
+  }
+  const bad = manifest.pages.filter((p) => !p.ok);
+  print(manifest, `Capture ${manifest.status.toUpperCase()} — ${manifest.pages.length - bad.length}/${manifest.pages.length} page(s) valid (min ${manifest.minBytes}B PNG) -> ${manifest.dir}/${bad.length ? `\n${bad.map((p) => `  ✗ ${p.name} ${p.route}: ${p.error}${p.usedFallback ? ' [placeholder written]' : ''}`).join('\n')}` : ''}${manifest.note ? `\n${manifest.note}` : ''}`);
+  if (manifest.status === 'fail') process.exitCode = 1;
+}
+
+async function cmdVisual() {
+  const feature = process.argv[3];
+  if (!feature) fail('Usage: harness visual <feature> [--run-id <id>|latest] [--update-baseline] [--max-diff-ratio 0.01] [--threshold 0.1]');
+  loadState(root, feature);
+  const { manifest, runDir } = loadRunManifest(root, feature, arg('--run-id', 'latest'));
+  let cfgBaseline = null;
+  try { cfgBaseline = loadPages(root, feature).baselineDir; } catch { /* pages optional here */ }
+  const baselineDir = cfgBaseline ? path.resolve(root, cfgBaseline) : defaultBaselineDir(root);
+  if (has('--update-baseline')) {
+    const adopted = adoptBaselines(root, manifest, runDir, baselineDir);
+    print({ adopted, baselineDir: path.relative(root, baselineDir), fromRun: manifest.runId }, `Adopted ${adopted.length} baseline(s) from run ${manifest.runId} -> ${path.relative(root, baselineDir)}/ (review them; commit them with the change that justified them).`);
+    return;
+  }
+  if (manifest.status !== 'pass') fail(`Run ${manifest.runId} has status "${manifest.status}" — it is not evidence, so there is nothing valid to compare. Re-run harness capture.`);
+  let result;
+  try {
+    result = await comparePages({
+      pages: manifest.pages,
+      runDir,
+      baselineDir,
+      maxDiffRatio: Number(arg('--max-diff-ratio', '0.01')),
+      threshold: Number(arg('--threshold', '0.1')),
+      load: () => loadDiffLibs(root),
+    });
+  } catch (e) {
+    if (e instanceof MissingPeerError) fail(e.message);
+    throw e;
+  }
+  const out = { feature, runId: manifest.runId, baselineDir: path.relative(root, baselineDir), ...result };
+  writeFileSync(path.join(runDir, 'comparison.json'), `${JSON.stringify(out, null, 2)}\n`);
+  const lines = result.results.map((r) => `  ${r.status === 'match' ? '✓' : r.status === 'no-baseline' ? '?' : '✗'} ${r.name} ${r.status}${r.ratio !== undefined ? ` ratio=${r.ratio} (max ${r.maxDiffRatio})` : ''}${r.detail ? ` ${r.detail}` : ''}`);
+  print(out, `Visual ${result.verdict.toUpperCase()} — run ${manifest.runId} vs ${path.relative(root, baselineDir)}/\n${lines.join('\n')}${result.verdict === 'no-baseline' ? `\nNOT a pass: ${result.noBaseline.length} page(s) have no baseline. Review the screenshots, then adopt them explicitly: harness visual ${feature} --update-baseline` : ''}`);
+  if (result.verdict === 'fail') process.exitCode = 1;
+  else if (result.verdict === 'no-baseline') process.exitCode = 2;
 }
 
 function cmdGate() {
@@ -436,9 +634,14 @@ function cmdReport() {
     `- Git HEAD: ${headSha(root) ?? 'n/a'}`,
   ];
   if (ev) {
-    lines.push('', `## Last evaluation`, `- Verdict: **${ev.verdict}**, score ${ev.score} (pass >= ${ev.passScore})`,
+    lines.push('', `## Last evaluation`, `- Verdict: **${ev.verdict}**, score ${ev.score} (pass >= ${ev.passScore})${ev.layers ? ` — ${Object.entries(ev.layers).map(([k, v]) => `${k} ${v.score}×${v.weight}`).join(', ')}` : ''}`,
       ...(ev.vetoed.length ? ev.vetoed.map((v) => `- VETO ${v.id}: ${v.reason}`) : ['- No vetoes']),
       ...ev.results.filter((r) => r.score < 1).map((r) => `- Open ${r.id} (${r.level}): ${r.detail}`));
+  }
+  if (state.pendingRefinements?.length || state.refinementLog?.length) {
+    lines.push('', '## Rubric refinements',
+      ...(state.pendingRefinements ?? []).map((r) => `- ⏳ ${r.id} [${r.type}] ${r.item}: ${r.suggestion}`),
+      ...(state.refinementLog ?? []).map((r) => `- ${r.decision === 'accepted' ? '✅' : '✖'} ${r.id} [${r.type}] ${r.item}: ${r.suggestion}${r.note ? ` — ${r.note}` : ''}`));
   }
   lines.push('', `## History`, ...state.history.map((h) => `- ${new Date(h.at).toISOString()} ${h.event ?? ''} ${h.task ?? ''} ${h.reason ?? ''}`.trimEnd()));
   console.log(lines.join('\n'));
@@ -475,15 +678,33 @@ try {
     case 'verify-zone': cmdVerifyZone(); break;
     case 'scope': cmdScope(); break;
     case 'run': cmdRun(); break;
+    case 'remediate-done': await cmdRemediateDone(); break;
+    case 'replan-done': await cmdReplanDone(); break;
+    case 'packet': cmdPacket(); break;
+    case 'capture': await cmdCapture(); break;
+    case 'visual': await cmdVisual(); break;
+    case 'routes': print(VERDICT_ROUTES, VERDICT_ROUTES.map((r) => `${r.when}\n    -> phase ${r.phase}, next ${r.next} (${r.who})`).join('\n')); break;
     default:
       console.log(`harness — frontend Harness kernel for long-running AI coding
 
 Usage:
-  harness init [--stack node|nextjs|vue] [--host claude-code|codex|generic] [--force]
+  harness init [--stack node|nextjs|vue|react] [--host claude-code|codex|generic] [--force]
   harness new <feature> [--title "..."]
   harness clarify-done <feature>        Lock clarification (rubric coverage gate)
   harness next <feature> [--json]       The next action, derived from state alone (resume)
   harness task-done <feature> <taskId> [--sha <commit>]
+  harness remediate-done <feature> [--sha <commit>]
+                                        Record a remediation fix; a fresh evaluator judges it next
+  harness replan-done <feature>         Record the planner's answers to rubric refinement suggestions
+                                        (replan-decisions.json); the rubric may only tighten
+  harness packet <feature> [--json]     The role-scoped input for the next agent step
+  harness routes                        The fixed verdict -> next-step table
+  harness capture <feature> [--base-url <url>] [--run-id <id>] [--allow-fallback] [--min-bytes 2048]
+                                        Playwright screenshots of pages.json routes; <min-bytes or
+                                        non-PNG fails; placeholders only with --allow-fallback
+  harness visual <feature> [--run-id <id>] [--update-baseline] [--max-diff-ratio 0.01]
+                                        Pixel diff (pixelmatch) vs baselines; no baseline is
+                                        reported as no-baseline (exit 2), never as a pass
   harness eval <feature> [--json]       Run rubric evaluation (veto rules apply), route the loop
   harness gate                          Run configured delivery-gate commands, fail-fast
   harness status [<feature>] [--json]

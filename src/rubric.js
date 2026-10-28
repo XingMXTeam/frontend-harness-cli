@@ -7,6 +7,17 @@ export const LEVELS = ['essential', 'important', 'optional', 'pitfall'];
 export const KINDS = ['command', 'file', 'grep', 'judge', 'scan'];
 export const SCAN_DIMENSIONS = ['structure', 'data', 'logic', 'ui', 'e2e'];
 
+export const LAYERS = ['L1', 'L2', 'L3', 'L4'];
+export const DEFAULT_LAYER_WEIGHTS = { L1: 0.4, L2: 0.25, L3: 0.2, L4: 0.15 };
+// Default item weight inside a layer when the item gives none (layered mode only).
+export const LEVEL_WEIGHTS = { essential: 1, important: 0.7, optional: 0.3, pitfall: 0.9 };
+
+/** "L1", "L1-function", "l3-ui" -> "L1" / "L3"; anything else -> null. */
+export function layerKey(layer) {
+  const m = String(layer ?? '').match(/^L([1-4])(?![0-9])/i);
+  return m ? `L${m[1]}` : null;
+}
+
 export function rubricPath(root, feature) {
   return path.join(featureDir(root, feature), 'rubric.json');
 }
@@ -28,6 +39,15 @@ export function validateRubric(rubric) {
   if (!Array.isArray(rubric.items) || rubric.items.length === 0) {
     throw new Error('rubric.items must be a non-empty array.');
   }
+  if (rubric.layerWeights !== undefined && rubric.layerWeights !== null) {
+    if (rubric.layerWeights === true) rubric.layerWeights = { ...DEFAULT_LAYER_WEIGHTS };
+    if (typeof rubric.layerWeights !== 'object') throw new Error('rubric.layerWeights must be true or an object {L1..L4: weight}.');
+    for (const [k, v] of Object.entries(rubric.layerWeights)) {
+      if (!LAYERS.includes(k)) throw new Error(`rubric.layerWeights: unknown layer "${k}" (L1|L2|L3|L4).`);
+      if (typeof v !== 'number' || v <= 0) throw new Error(`rubric.layerWeights.${k} must be a positive number.`);
+    }
+  }
+  const layered = Boolean(rubric.layerWeights);
   const reqIds = new Set();
   for (const r of rubric.requirements) {
     if (!r.id) throw new Error('Every requirement needs an id.');
@@ -55,7 +75,12 @@ export function validateRubric(rubric) {
       if (!SCAN_DIMENSIONS.includes(it.dimension)) throw new Error(`Item ${it.id}: kind=scan needs dimension one of ${SCAN_DIMENSIONS.join('/')}.`);
       if (typeof it.minScore !== 'number') throw new Error(`Item ${it.id}: kind=scan needs a numeric minScore.`);
     }
-    it.weight = typeof it.weight === 'number' && it.weight > 0 ? it.weight : 1;
+    if (layered) {
+      const k = layerKey(it.layer);
+      if (!k) throw new Error(`Item ${it.id}: layered rubric (layerWeights set) — every item needs layer L1|L2|L3|L4 (got "${it.layer ?? ''}").`);
+      if (!(k in rubric.layerWeights)) throw new Error(`Item ${it.id}: layer ${k} has no weight in rubric.layerWeights.`);
+    }
+    it.weight = typeof it.weight === 'number' && it.weight > 0 ? it.weight : layered ? LEVEL_WEIGHTS[it.level] : 1;
   }
   for (const w of rubric.qualityWaivers ?? []) {
     if (!w.requirement || !reqIds.has(w.requirement)) throw new Error(`qualityWaivers: unknown requirement "${w.requirement}".`);
@@ -80,6 +105,22 @@ export function coverageGaps(rubric) {
     if (minPitfalls > 0) {
       const pitfalls = rubric.items.filter((i) => i.requirement === req.id && i.level === 'pitfall').length;
       if (pitfalls < minPitfalls) gaps.push({ requirement: req.id, problem: `policy requires ${minPitfalls} pitfall item(s) per requirement, found ${pitfalls} — the fatal flaws must be named in advance, not discovered later` });
+    }
+  }
+  // Per-layer quotas (layered rubrics only): a layer with too few
+  // essentials or no pitfall is a layer whose failure modes were not
+  // named in advance. A layer that genuinely does not apply (no UI) is
+  // excused with policy.layerNA.<L> and a reason.
+  const minEss = rubric.policy?.minEssentialPerLayer ?? 0;
+  const minPit = rubric.policy?.minPitfallsPerLayer ?? 0;
+  if (rubric.layerWeights && (minEss > 0 || minPit > 0)) {
+    for (const L of Object.keys(rubric.layerWeights)) {
+      if (String(rubric.policy?.layerNA?.[L] ?? '').trim()) continue;
+      const inLayer = rubric.items.filter((i) => layerKey(i.layer) === L);
+      const ess = inLayer.filter((i) => i.level === 'essential').length;
+      const pit = inLayer.filter((i) => i.level === 'pitfall').length;
+      if (ess < minEss) gaps.push({ requirement: '*', problem: `layer ${L}: ${ess}/${minEss} essential items — add items or declare policy.layerNA.${L} with a reason` });
+      if (pit < minPit) gaps.push({ requirement: '*', problem: `layer ${L}: ${pit}/${minPit} pitfall items — name this layer's fatal flaws, or declare policy.layerNA.${L} with a reason` });
     }
   }
   return gaps;

@@ -20,17 +20,22 @@ export function nextAction(root, state, config) {
       return { ...base, action: 'clarify-done', instruction: 'Clarification is marked complete; run harness clarify-done to re-check rubric coverage.' };
     }
     case 'implement': {
-      if (state.remediation?.length) {
-        return { ...base, action: 'remediate', items: state.remediation, instruction: 'Fix ONLY these open evaluation items, commit precisely, then run: harness eval ' + state.feature };
+      // Rubric evolution comes first: suggestions the evaluator filed must
+      // be answered by the planner before anyone fixes against the rubric.
+      if (state.remediation?.length && state.pendingRefinements?.length) {
+        return { ...base, action: 'replan', refinements: state.pendingRefinements.map((r) => r.id), items: state.remediation, instruction: `The last evaluation failed and filed ${state.pendingRefinements.length} rubric refinement suggestion(s). Planner: decide each one (accepted | rejected with a reason) in replan-decisions.json, apply the accepted ones to rubric.json (tighten only; loosening needs a human), add tasks for open items that need new work, then run: harness replan-done ${state.feature}` };
       }
       const pending = state.tasks.find((t) => t.status !== 'done');
       if (pending) {
         return { ...base, action: 'implement-task', task: pending, instruction: `Implement task ${pending.id} (${pending.title}). Small loop: implement -> run its checks -> precise git commit -> harness task-done ${state.feature} ${pending.id} --sha <sha>. Do not start the next task before this one is recorded done.` };
       }
-      return { ...base, action: 'evaluate', instruction: 'All tasks are recorded done. Run: harness eval ' + state.feature };
+      if (state.remediation?.length && !state.remediationFixedAt) {
+        return { ...base, action: 'remediate', items: state.remediation, instruction: `Fix ONLY these open evaluation items, commit precisely, then run: harness remediate-done ${state.feature} --sha <sha>. Do not run harness eval yourself — a fresh evaluator judges the fix.` };
+      }
+      return { ...base, action: 'evaluate', instruction: (state.remediation?.length ? 'The remediation is recorded. ' : 'All tasks are recorded done. ') + 'Dispatch the evaluator (fresh context) to produce judge evidence, then run: harness eval ' + state.feature };
     }
     case 'verify': {
-      return { ...base, action: 'confirm-evaluation', instruction: 'A first full pass is recorded. Get a FRESH independent evaluation (new evaluator context; regenerate judge evidence without reading the implementer reasoning), then run: harness eval ' + state.feature };
+      return { ...base, action: 'confirm-evaluation', instruction: 'A first full pass is recorded. Get a FRESH independent evaluation (new evaluator context; regenerate every judge evidence file — evidence older than the previous evaluation scores 0), then run: harness eval ' + state.feature };
     }
     case 'paused': {
       return { ...base, action: 'human-decision', reason: state.pauseReason ?? 'budget exhausted', instruction: 'The harness paused itself instead of burning more cycles. A human must review the last evaluation report, then either raise budgets in harness.config.json or run: harness resume ' + state.feature };
@@ -53,6 +58,7 @@ export function tryLoadRubric(root, feature) {
 
 /** Apply an evaluation result to the state machine. Returns a routing summary. */
 export function applyEvaluation(root, state, config, evaluation, gateResult) {
+  state.remediationFixedAt = null;
   state.lastEvaluation = { at: evaluation.at, verdict: evaluation.verdict, score: evaluation.score, vetoed: evaluation.vetoed };
   const openItems = evaluation.results.filter((r) => r.score < 1).map((r) => r.id);
 
@@ -70,7 +76,8 @@ export function applyEvaluation(root, state, config, evaluation, gateResult) {
     state.phase = 'implement';
     state.remediation = openItems;
     record(state, { event: 'evaluation-failed', score: evaluation.score, vetoed: evaluation.vetoed, nextMacroCycle: state.macroCycle.current });
-    return { routed: 'remediate', openItems, macroCycle: state.macroCycle.current };
+    const replan = Boolean(state.pendingRefinements?.length);
+    return { routed: replan ? 'replan' : 'remediate', openItems, macroCycle: state.macroCycle.current, ...(replan ? { reason: 'the planner answers the rubric refinement suggestions before the developer fixes the open items' } : {}) };
   }
 
   // Pass path.
@@ -135,5 +142,38 @@ export function checkCoverage(root, state) {
     gaps.push(...e2eCategoryGaps(rubric, cases));
   }
 
+  // UI journeys must visit pages the capture step will screenshot.
+  const casesPath = path.join(featureDir(root, state.feature), 'e2e-cases.json');
+  const pagesPath = path.join(featureDir(root, state.feature), 'pages.json');
+  if (existsSync(casesPath) && existsSync(pagesPath)) {
+    let cases = null;
+    let pages = null;
+    try { cases = JSON.parse(readFileSync(casesPath, 'utf8')); } catch { /* reported above when quotas are declared */ }
+    try { const raw = JSON.parse(readFileSync(pagesPath, 'utf8')); pages = Array.isArray(raw) ? raw : raw.pages; } catch { gaps.push({ requirement: '*', problem: 'pages.json is not valid JSON' }); }
+    if (Array.isArray(cases) && Array.isArray(pages)) {
+      const pathname = (r) => String(r ?? '').split(/[?#]/)[0];
+      const known = new Set(pages.map((p) => pathname(p.route)));
+      for (const c of cases) {
+        if (c.category === 'uiJourney' && c.route && !known.has(pathname(c.route))) {
+          gaps.push({ requirement: c.mapsTo ?? '*', problem: `e2e case ${c.id}: uiJourney route ${c.route} is not in pages.json — evidence capture would never screenshot it` });
+        }
+      }
+    }
+  }
+
   return { ok: gaps.length === 0, gaps, rubric };
 }
+
+/**
+ * The fixed verdict -> next-step table. Every host reads the same table
+ * (hook context, protocol skill, docs/orchestration.md); nobody improvises
+ * a different route, and nobody stops at a summary between two rows.
+ */
+export const VERDICT_ROUTES = [
+  { when: 'eval pass, stable passes still needed', phase: 'verify', next: 'confirm-evaluation', who: 'evaluator (fresh context)' },
+  { when: 'eval pass, stable passes met, delivery gate green', phase: 'done', next: 'none', who: 'report to the user' },
+  { when: 'eval pass, delivery gate red', phase: 'implement', next: 'remediate', who: 'developer' },
+  { when: 'eval fail (veto or below passScore), refinement suggestions filed', phase: 'implement', next: 'replan', who: 'planner' },
+  { when: 'eval fail (veto or below passScore), no suggestions', phase: 'implement', next: 'remediate', who: 'developer' },
+  { when: 'eval fail, macro-cycle budget exhausted', phase: 'paused', next: 'human-decision', who: 'the user' },
+];

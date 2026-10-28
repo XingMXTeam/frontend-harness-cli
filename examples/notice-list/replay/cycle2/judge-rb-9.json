@@ -1,0 +1,13 @@
+{
+  "score": 1,
+  "note": "Empty: 'No notices yet.' + one Refresh button. Error: danger-colored sentence + one Retry button, and never the empty sentence (RL-2 holds). Both actions are type=button and keyboard reachable.",
+  "artifacts": [
+    ".harness/tasks/notice-list/evaluation/render-empty.html",
+    ".harness/tasks/notice-list/evaluation/render-error.html"
+  ],
+  "heuristics": ["H-UX-2.3", "H-UX-3.2", "H-UX-3.4", "H-UI-6.1"],
+  "rubricRefinementSuggestions": [
+    { "type": "add-verification", "item": "RB-9", "problem": "the item is scored from rendered HTML; the vision's 'one obvious next action' is a visual claim", "suggestion": "once Playwright is available in CI, cite harness capture PNGs of /?state=empty and /?state=error and measure the button's contrast (H-UI-2.3)" },
+    { "type": "add", "item": "NEW", "layer": "L4", "level": "important", "suggestion": "Retry shows a loading state while the request is in flight and cannot be double-clicked (H-UX-2.4)" }
+  ]
+}
