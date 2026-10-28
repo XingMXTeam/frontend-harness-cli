@@ -81,7 +81,41 @@
     Clarification remains a human stop in driver mode too: automating
     the user's answers would corrupt every anchor downstream.
 
-## Not in v0.4 (deliberately)
+13. **Roles are kernel-scoped, not prompt-scoped (v0.5).** Decision 6
+    said isolation was a protocol property the kernel could only audit.
+    v0.5 moves as much of it as possible into mechanism without the
+    kernel calling a model: (a) the kernel builds every agent packet from
+    a per-role whitelist, and the driver refuses to send an evaluator
+    packet that contains an implementer record; (b) agent steps carry
+    `HARNESS_ROLE` and kernel commands refuse the wrong role, so the
+    evaluator cannot record work and no role can score itself; (c) judge
+    evidence older than the work it judges, or than the previous
+    evaluation, scores 0 — a confirmation pass that reuses notes fails
+    by construction; (d) remediation ends in `remediate-done`, and a
+    fresh evaluator — not the developer — produces the next evidence.
+    What remains a protocol property (an agent with a shell can still
+    open a file) is named as such in the README.
+
+14. **The contract may tighten itself, never loosen itself (v0.5).**
+    Evaluators file rubric refinement suggestions; the kernel records
+    them and routes a failed evaluation to `replan` before remediation.
+    `replan-done` requires a decision per suggestion, a real change for
+    every acceptance, a passing coverage gate, and a human for any
+    change that removes an essential/pitfall item or lowers a level.
+    The rubric gets sharper with use; it cannot be quietly negotiated
+    down by the agents it constrains.
+
+15. **Evidence is captured, validated, and never faked (v0.5).**
+    `capture` and `visual` move visual evidence into the kernel's
+    vocabulary while keeping decision 2: Playwright, pixelmatch and
+    pngjs are optional peers of the project under test, loaded only by
+    the commands that need them. A blank or non-PNG capture fails;
+    placeholders exist only behind `--allow-fallback` and mark the run
+    as not-evidence; a missing baseline is `no-baseline`, not a match;
+    baselines are adopted explicitly. Screenshot-checked red lines must
+    be judged from a real PNG.
+
+## Not in v0.5 (deliberately)
 
 - Multi-agent scheduling / parallel task execution. The loop is
   sequential by design; parallelism multiplies every failure mode the
@@ -104,6 +138,49 @@ The bundled tests simulate both; the two-repo run is the release gate for
 v1.0, not a launch-day claim.
 
 ## Changelog
+
+- v0.5.0 — the agent layer.
+  - Roles: `templates/claude-code/agents/{planner,developer,evaluator}.md`
+    installed to `.claude/agents/` (claude-code) or `.harness/agents/`
+    (codex/generic, instruction-level, with `.harness/protocol.md`).
+    `src/roles.js` maps actions to roles and builds whitelisted packets;
+    `harness run` prepends the role definition, sets `HARNESS_ROLE`,
+    dispatches an evaluator before every eval of a rubric with judge
+    items, and trips on evaluator packets that would leak implementer
+    records. New `harness packet <feature>`.
+  - Kernel: `remediate-done` (remediation ends in a recorded fix; the
+    evaluator judges it), `replan-done` + the `replan` action (refinement
+    suggestions answered before remediation; tighten-only rubric with a
+    human override), `routes` (fixed verdict table). `eval` now refuses
+    with pending tasks, prints the next action, and records
+    `rubricRefinementSuggestions`. Judge evidence: freshness rule,
+    `artifacts` must exist, screenshot-checked red lines need a real PNG.
+    Layered rubrics (`layerWeights`, L1–L4 0.40/0.25/0.20/0.15, level
+    weights 1/0.7/0.3) and per-layer quotas. uiJourney E2E routes must
+    be in `pages.json`. `clarify-done` locks a rubric baseline.
+  - Evidence: `harness capture` (Playwright, PNG + size validation,
+    `--allow-fallback` recorded as non-evidence, `manifest.json`,
+    `latest.json`) and `harness visual` (pixelmatch ratio vs threshold,
+    `no-baseline` exit 2, explicit `--update-baseline`). Playwright,
+    pixelmatch, pngjs declared as optional peer dependencies.
+  - Skills: 13 new (authoring chain clarify-requirements → write-prd →
+    write-quality-vision → write-tech-design → write-dev-plan →
+    write-acceptance-criteria; implement-task, fix-from-report,
+    systematic-debugging, verification-before-completion; e2e-testing,
+    api-testing; sync-overview), each with a Chinese reading edition;
+    golden set extended to 36 cases covering every bundled skill.
+  - Docs: `docs/orchestration.md`, `docs/evaluation-rubric-standard.md`,
+    `docs/evaluation-heuristics.md`, installed to `.harness/docs/`.
+  - Protocol + session-start hook: orchestrator boundary, verdict →
+    next-step map, never stop at a summary, never decide for the user.
+  - Standards: node / nextjs / vue rewritten to working size; new
+    `react` stack pack.
+  - Example: `examples/notice-list` — a real feature replayed through
+    fail (veto) → replan → fix → pass → confirm → done, with the recorded
+    trajectory (`npm run example`).
+  - Behavior changes: the confirmation pass needs regenerated judge
+    evidence; `remediate`'s instruction now ends in `remediate-done`
+    instead of `eval`; `eval` refuses while any task is pending.
 
 - v0.4.1 — docs: every bundled skill and the harness protocol skill ship a
   Chinese reading edition (`SKILL.zh-CN.md` beside the operative English

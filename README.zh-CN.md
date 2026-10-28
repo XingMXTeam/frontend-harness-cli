@@ -3,8 +3,8 @@
 一个不绑宿主的 **Harness 内核**，专为长程**前端** AI 编程而造。
 
 为什么先做前端？因为证据都在前端。传感器的五维（structure / data /
-logic / **ui** / e2e）、技能包里一半的 Skill（component-from-design、
-i18n-extract）、技术栈包（**node / nextjs / vue**），加上作者十年一线
+logic / **ui** / e2e）、前端向的 Skill（component-from-design、
+i18n-extract、e2e-testing）、技术栈包（**node / nextjs / vue / react**），加上作者十年一线
 前端的实测经验，指向的都是同一个方向。内核本身保持与栈无关——规范与
 默认都放在栈包里——但产品不宣称没有实测过的地盘。先做前端；通用性
 靠一个个栈包挣出来，不靠嘴说。
@@ -20,9 +20,10 @@ i18n-extract）、技术栈包（**node / nextjs / vue**），加上作者十年
 自己答、平均分掩盖致命缺陷（一个核心功能死了、九十九个检查是绿的）、
 状态只活在对话里（进程一杀全丢）、无预算地重试烧钱。
 
-`harness` 是去掉这些失败模式的确定性内核。它**从不调用 LLM**：宿主 Agent
-（Claude Code、Codex、Cursor…）负责规划、写码和评判，CLI 负责状态、
-覆盖门禁、测评、交付闸门和预算。
+`harness` 是去掉这些失败模式的确定性内核。它**从不调用 LLM**：三个角色
+Agent——**planner**、**developer**、**evaluator**——在任意宿主（Claude Code、
+Codex…）里负责规划、写码和评判，CLI 负责状态、覆盖门禁、测评、交付闸门、
+预算，以及每个角色能看到什么。
 
 ## 核心机制
 
@@ -48,19 +49,25 @@ i18n-extract）、技术栈包（**node / nextjs / vue**），加上作者十年
 ## 快速开始
 
 ```bash
-node bin/harness.js init --stack node --host claude-code  # 栈: node/nextjs/vue; 宿主: claude-code/codex/generic
+node bin/harness.js init --stack react --host claude-code  # 栈: node/nextjs/vue/react; 宿主: claude-code/codex/generic
 node bin/harness.js new checkout --title "结算流程"
-# 与用户澄清后，由 Planner 写 .harness/tasks/checkout/rubric.json 与 tasks.json
+# planner：与用户澄清，再按 write-* 链写 prd.md、vision.md、tech-design.md + pages.json、
+# tasks.json、rubric.json + e2e-cases.json
 node bin/harness.js clarify-done checkout
 node bin/harness.js next checkout
+node bin/harness.js packet checkout          # 交给负责该步骤的角色 Agent 的输入
 node bin/harness.js task-done checkout TASK-1 --sha <commit>
+node bin/harness.js capture checkout         # evaluator：按 pages.json 用 Playwright 截图
 node bin/harness.js eval checkout
 node bin/harness.js report checkout
-npm run demo   # 自带端到端演示，含一次模拟中途中断后的续跑
-npm test       # 43 个测试：v0.1 内核全套（覆盖门禁/否决/pitfall/judge 证据/续跑/SHA/预算停机/全流程）
+npm run demo     # 端到端演示，含一次模拟中途中断后的续跑
+npm run example  # examples/notice-list：真实功能走完 失败 → replan → 修复 → 通过 → done
+npm test         # 72 个测试：v0.1 内核全套（覆盖门禁/否决/pitfall/judge 证据/续跑/SHA/预算停机/全流程）
                # + v0.2 统一（scan 分数等价/scan 条目/技能包装语义）
                # + v0.3（vision 锚点与豁免/e2e 六类配额/verify-zone/scope/scan 历史/skills 自评计分）
                # + v0.4 run 驱动（无人值守跑到 done/驱动重启续跑/澄清需人停机/Agent 失败与停滞检测）
+               # + v0.5 Agent 层（角色 packet 与隔离绊线/角色守卫/证据新鲜度与引用/分层计分/
+               #   改进建议 → replan/capture 与 visual/notice-list 示例重放）
 ```
 
 ## v0.3 补齐：品质锚定、治理接线、分母与自评
@@ -82,12 +89,12 @@ npm test       # 43 个测试：v0.1 内核全套（覆盖门禁/否决/pitfall/
   N/A 必须写理由，core 与 negative 各至少一条 blocking；
   `policy.minPitfallsPerRequirement` 可强制每个 requirement 预先
   写明致命缺陷。
-- **Skill 自评。** `harness skills eval` 发出黄金用例包（内置 20 条，
-  应触发/不应触发 = 80/20），由全新宿主会话回填证据，内核按触发
+- **Skill 自评。** `harness skills eval` 发出黄金用例包（内置 36 条，
+  应触发/不应触发 ≈ 80/20，每个内置 skill 都有用例），由全新宿主会话回填证据，内核按触发
   准确率计分判定。改 Skill 不过自评，等于给工作流的规则裸奔改版。
-- **视觉回归走外部工具路线**：栈包写明如何把像素差工具接成交付门禁
-  命令；没有 baseline 就没有视觉判定，内核不假装能查自己查不了的
-  东西。
+- **视觉回归**：v0.5 起内核自带 `harness capture` 与 `harness visual`
+  （见下）；没有 baseline 仍然没有视觉判定，内核不假装能查自己查不了
+  的东西。
 
 ## 真长程：`harness run`（v0.4）
 
@@ -108,13 +115,61 @@ npm run demo:run   # 用替身 Agent 演示无人值守全程，含一次驱动�
 跑了一步但状态签名毫无变化，计一次停滞，两次结束运行——这是
 「禁止停滞」的机械化执行，不靠口头约束）。
 
-## 诚实边界（v0.4）
+## Agent 层（v0.5）
+
+v0.4 能驱动循环；v0.5 讲清楚每一步谁来做、能看到什么、以及内核所执行的
+契约由谁、怎样写出来。
+
+- **三角色，隔离是机制不是口号。** `init --host claude-code` 安装
+  `.claude/agents/planner.md`、`developer.md`、`evaluator.md`（硬边界、输入/
+  输出契约、交接字段）；codex/generic 在 `.harness/agents/` 得到同样的指令级
+  文本。clarify/replan → planner，implement-task/remediate → developer，
+  evaluate/confirm-evaluation → evaluator。内核按白名单为每个角色构建 packet
+  （`harness packet <feature>`）：developer 拿不到 `rubric.json`；evaluator
+  拿不到提交 SHA、开发者报告、失败日志和状态历史——`harness run` 发现
+  evaluator packet 会泄露这些时直接停机。`run` 下每一步带 `HARNESS_ROLE`，
+  内核命令拒绝错误角色（只有 developer 能 `task-done` / `remediate-done`，
+  只有 planner 能 `replan-done`，只有编排者能 `eval`）。judge 证据必须晚于
+  它所评判的工作和上一次评估，确认轮因此真的是新鲜的。
+- **让 `clarify-done` 诚实通过的成文链。** 新增 13 个 skill（各带中文阅读版）：
+  `clarify-requirements` → `write-prd` → `write-quality-vision` →
+  `write-tech-design`（+ `pages.json`）→ `write-dev-plan` →
+  `write-acceptance-criteria`（分层 `rubric.json` + 六类 `e2e-cases.json`），
+  developer 用的 `implement-task`、`fix-from-report`、`systematic-debugging`、
+  `verification-before-completion`，evaluator 用的 `e2e-testing`、`api-testing`，
+  以及长期记忆 `sync-overview`。`.harness/docs/` 安装三份文档：
+  `orchestration.md`、`evaluation-rubric-standard.md`、`evaluation-heuristics.md`。
+- **结论 → 下一步固定映射，禁止停在总结。** `harness routes` 打印映射表；
+  `harness eval` 每次都打印下一步；协议 skill 与 session-start hook 要求编排者
+  同一轮派发，且绝不替用户回答澄清问题。
+- **分层 rubric。** `"layerWeights": true` 按 L1 正确性 / L2 健壮性 / L3 UI /
+  L4 交互 = 0.40 / 0.25 / 0.20 / 0.15 计分，级别权重 1 / 0.7 / 0.3；否决仍高于
+  任何分数。可选每层配额（`policy.minEssentialPerLayer`、`minPitfallsPerLayer`）。
+- **rubric 进化。** evaluator 在 judge 证据里附 `rubricRefinementSuggestions`；
+  内核记录为 `RS-n`，失败的评估先路由到 `replan`，`replan-done` 要求逐条回答、
+  被接受的建议必须真的改了文件、任何放宽已锁定 rubric 的改动需要人
+  （`GATE_HUMAN_CONFIRM=yes`）。
+- **取证截图与像素比对。** `harness capture <feature>` 按 `pages.json` 用
+  Playwright 截图；非 PNG 或小于 `--min-bytes`（2KB）即失败，占位图只在
+  `--allow-fallback` 下出现（状态 `fallback`，永不算证据）。`harness visual`
+  用 pixelmatch 与 `.harness/baselines/` 比对；没有基线报 `no-baseline`
+  （退出码 2），不算通过。锚定在截图类红线上的 judge 条目必须引用真实 PNG。
+  Playwright、pixelmatch、pngjs 是**可选 peer 依赖**——没装时命令会准确告诉你装什么。
+
+## 诚实边界（v0.5）
 
 内核只做编排与测评，永不调用 LLM；`harness run` 驱动层把任务包派给
 宿主 Agent 的命令行（Claude Code、Codex，或 --agent-cmd 指定的任意
 命令）——智能是宿主的，纪律是内核的。不用 run 时，宿主会话也可以
 照 `harness next` 交互式地走同一套循环。judge 类条目的品味取决于
 真实评判者，内核管的是格式与否决权。完整接线的是 Claude Code
-（skill + session-start hook），Codex/generic 为指令级接入。
+（协议 skill + 三角色 agent + session-start hook），Codex/generic 为指令级接入。
+隔离约束的是内核发出和接收的东西；有 shell 权限的 Agent 仍然能打开没给它的
+文件——packet、角色守卫和新鲜度规则让这成为一次有意的违规，而不是意外。
+澄清门禁（用户确认、未决问题为 0）是记录在 `clarification/summary.md` 的
+skill 级规则；内核强制的是由它推出的 rubric 覆盖，而不是对话本身。自带示例
+录制时没有浏览器，judge 证据引用的是渲染出的 HTML；`harness capture` 已用
+Playwright 替身和真实 Playwright 安装（缺浏览器 → 清晰报错）测过，尚未在 CI
+里对接真实浏览器。
 
 MIT License.
