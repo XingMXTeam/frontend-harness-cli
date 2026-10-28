@@ -1,0 +1,6 @@
+{
+  "inputs": {
+    "testCommand": "node fake-runner.mjs",
+    "testResults": "results.json"
+  }
+}

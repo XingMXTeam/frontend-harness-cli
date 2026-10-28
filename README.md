@@ -292,6 +292,28 @@ no change — zero-config scans behave exactly as before. A spec that
 cannot be loaded, or a codebase with no type declarations at all,
 reports *neutral*: unverified never poses as verified.
 
+## Real runs: compilation and tests actually execute (v0.7)
+
+Two dimensions used to grade paperwork: structure trusted size and
+import heuristics because nothing compiled the code, and e2e trusted a
+results file someone else had produced. Both now run the real thing,
+locally:
+
+- **Compilation.** An explicit `compileCommand` still wins. Otherwise,
+  if the project has a `tsconfig.json` and a locally installed
+  TypeScript (`node_modules/.bin/tsc`), the scan runs `tsc --noEmit`
+  itself — failure deducts 40 and quotes the first error. Only local
+  binaries are ever executed; nothing is downloaded. A compile that
+  cannot finish in 120s reports *neutral*, not failed, and
+  `"autoCompile": false` opts out entirely.
+- **Tests.** Set `inputs.testCommand` (e.g. `"npm test"`), or pass
+  `harness scan --run-tests` to detect `package.json`'s test script,
+  and the scan executes the suite before scoring. If the command
+  produces the configured `testResults` file, counts are parsed from it
+  as before; if not, the run counts as an exit-code-only signal and the
+  report says so. A command that cannot complete leaves the run signal
+  unverified rather than inventing a result.
+
 ## Honest boundaries (v0.5)
 
 - The kernel orchestrates and evaluates; it never calls an LLM.
@@ -302,6 +324,10 @@ reports *neutral*: unverified never poses as verified.
 - Judge-kind items depend on a real evaluator producing evidence; the kernel
   enforces the *format and the veto*, not the judge's taste.
 - One host is fully wired (Claude Code). Codex/generic are instruction-level.
+- Real runs execute the scanned project's own code: its `tsc` binary,
+  its `compileCommand`/`testCommand`, its `npm test`. That is the point —
+  and it means scan should only be pointed at projects you would run
+  yourself.
 - Isolation is enforced on what the kernel hands out and what it accepts;
   an agent with shell access can still open a file it was not given.
   The packet, the role guard and the freshness rule make that a
@@ -318,7 +344,7 @@ reports *neutral*: unverified never poses as verified.
 ## Development
 
 ```bash
-npm test        # 76 tests: the v0.1 kernel set (coverage gate, veto, pitfall,
+npm test        # 82 tests: the v0.1 kernel set (coverage gate, veto, pitfall,
                 # judge evidence, resume, SHA verification, budget pause, full
                 # loop to done) + v0.2 unification (scan-score equivalence with
                 # the original ai-code-gate CLI, scan rubric items, skills-pack
@@ -332,6 +358,8 @@ npm test        # 76 tests: the v0.1 kernel set (coverage gate, veto, pitfall,
                 # replan, capture/visual, the notice-list example replay)
                 # + v0.6 data-spec conformance (field diff pass/deductions,
                 # neutral on unloadable spec or missing declarations)
+                # + v0.7 real runs (auto-detected tsc compile pass/fail/opt-out,
+                # testCommand and --run-tests execution, exit-code signal)
 ```
 
 MIT License.

@@ -144,10 +144,11 @@ function cmdScan() {
   const argv = process.argv.slice(3);
   const histIdx = argv.indexOf('--history');
   const historyDir = histIdx >= 0 ? argv[histIdx + 1] : null;
+  const runTestsFlag = argv.includes('--run-tests');
   const positional = argv.filter((a, i) => !a.startsWith('--') && i !== histIdx + 1);
   const target = path.resolve(root, positional[0] ?? '.');
   if (!existsSync(target)) fail(`Scan target does not exist: ${target}`);
-  const report = runScan(target);
+  const report = runScan(target, { runTests: runTestsFlag });
   if (historyDir) {
     const dir = path.resolve(root, historyDir);
     const previous = readPreviousReport(dir);
@@ -711,9 +712,10 @@ Usage:
   harness resume <feature>              Human un-pause after a budget stop
   harness report <feature>              Markdown acceptance report
   harness doctor                        Environment + config checks
-  harness scan [path] [--json] [--history <dir>]
+  harness scan [path] [--json] [--history <dir>] [--run-tests]
                                         Standalone gate-engine scan (no init needed; CI-friendly);
-                                        --history appends the report and prints the trend vs last run
+                                        --history appends the report and prints the trend vs last run;
+                                        --run-tests executes the project's own test script for the e2e dimension
   harness verify-zone [path]            Block if protected files changed without GATE_HUMAN_CONFIRM=yes
   harness scope <plan.md> [path]        Block if changes fall outside the plan's declared editable scope
   harness skills list                   List the bundled skills pack

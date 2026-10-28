@@ -37,7 +37,7 @@
     "example": "bash examples/notice-list/run.sh"
   },
   "type": "module",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "peerDependencies": {
     "playwright": ">=1.40.0",
     "pixelmatch": ">=5.3.0",

@@ -1,4 +1,6 @@
 import { execSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { collectFiles, isTestFile } from "./scan.js";
 import {
   applyExemptions,
@@ -21,13 +23,77 @@ const CHECKS = {
   e2e: (files, cfg, ctx) => checkE2e(files, cfg.rules.e2e, isTestFile, ctx),
 };
 
+const COMPILE_TIMEOUT_MS = 120_000;
+const TEST_TIMEOUT_DEFAULT_MS = 300_000;
+
+// Compilation is verified by actually compiling, never by looking at the
+// code harder. An explicit compileCommand wins; otherwise a locally
+// installed tsc (tsconfig.json + node_modules/.bin/tsc) is auto-detected
+// — local binaries only, a scan must never download anything. A timeout
+// leaves the check unverified (neutral), not failed: "we could not
+// finish checking" is a different claim from "the code does not compile".
+function resolveCompile(root, config) {
+  if (config.compileCommand) return { command: config.compileCommand, source: "compileCommand" };
+  if (config.autoCompile === false) return null;
+  if (existsSync(join(root, "tsconfig.json")) && existsSync(join(root, "node_modules", ".bin", "tsc"))) {
+    return { command: "./node_modules/.bin/tsc --noEmit -p tsconfig.json", source: "auto-tsc" };
+  }
+  return null;
+}
+
+function firstErrorLine(err) {
+  const text = `${err.stdout?.toString() ?? ""}\n${err.stderr?.toString() ?? ""}`;
+  const line = text.split("\n").map((l) => l.trim()).find((l) => l.length > 0);
+  return line ? line.slice(0, 200) : null;
+}
+
 function runCompile(root, config, ctx) {
-  if (!config.compileCommand) return;
+  const resolved = resolveCompile(root, config);
+  if (!resolved) return;
+  ctx.compileSource = resolved.source;
   try {
-    execSync(config.compileCommand, { cwd: root, stdio: "pipe" });
+    execSync(resolved.command, { cwd: root, stdio: "pipe", timeout: COMPILE_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 });
     ctx.compiled = true;
-  } catch {
+  } catch (err) {
+    if (err.code === "ETIMEDOUT") {
+      ctx.compileTimedOut = true;
+      return;
+    }
     ctx.compiled = false;
+    ctx.compileErrorLine = firstErrorLine(err);
+  }
+}
+
+// The e2e dimension used to grade a results file it was handed — someone
+// else had to run the tests. With inputs.testCommand set (or the scan's
+// --run-tests flag, which reads package.json's test script), the scan
+// runs the suite itself before scoring; a results file the command
+// produces is then parsed for counts exactly as before. A command that
+// cannot complete (spawn failure, timeout) leaves the run signal
+// unverified instead of inventing a result.
+function resolveTestCommand(root, config, opts) {
+  if (config.inputs?.testCommand) return config.inputs.testCommand;
+  if (!opts?.runTests) return null;
+  try {
+    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    if (pkg.scripts && typeof pkg.scripts.test === "string" && pkg.scripts.test.trim()) return "npm test";
+  } catch {
+    // No readable package.json — nothing to detect.
+  }
+  return null;
+}
+
+function runTests(root, config, ctx, opts) {
+  const command = resolveTestCommand(root, config, opts);
+  if (!command) return;
+  const timeout = config.inputs?.testTimeoutMs ?? TEST_TIMEOUT_DEFAULT_MS;
+  try {
+    execSync(command, { cwd: root, stdio: "pipe", timeout, maxBuffer: 16 * 1024 * 1024 });
+    ctx.testRun = { command, exitCode: 0 };
+  } catch (err) {
+    if (err.code === "ETIMEDOUT") ctx.testRun = { command, error: `timed out after ${timeout}ms` };
+    else if (typeof err.status === "number") ctx.testRun = { command, exitCode: err.status };
+    else ctx.testRun = { command, error: err.message };
   }
 }
 
@@ -106,10 +172,11 @@ function summarize(dimensions) {
   return { failedReasons, remediation, notCovered };
 }
 
-export function evaluate(root, config) {
+export function evaluate(root, config, opts = {}) {
   const files = collectFiles(root, config);
   const ctx = buildContext(root, config, files);
   runCompile(root, config, ctx);
+  runTests(root, config, ctx, opts);
 
   // 1. Score every dimension. 2. Evaluate named gates in order;
   // short-circuit at the first failure. 3. Summarize for remediation.

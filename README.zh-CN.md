@@ -62,13 +62,14 @@ node bin/harness.js eval checkout
 node bin/harness.js report checkout
 npm run demo     # 端到端演示，含一次模拟中途中断后的续跑
 npm run example  # examples/notice-list：真实功能走完 失败 → replan → 修复 → 通过 → done
-npm test         # 76 个测试：v0.1 内核全套（覆盖门禁/否决/pitfall/judge 证据/续跑/SHA/预算停机/全流程）
+npm test         # 82 个测试：v0.1 内核全套（覆盖门禁/否决/pitfall/judge 证据/续跑/SHA/预算停机/全流程）
                # + v0.2 统一（scan 分数等价/scan 条目/技能包装语义）
                # + v0.3（vision 锚点与豁免/e2e 六类配额/verify-zone/scope/scan 历史/skills 自评计分）
                # + v0.4 run 驱动（无人值守跑到 done/驱动重启续跑/澄清需人停机/Agent 失败与停滞检测）
                # + v0.5 Agent 层（角色 packet 与隔离绊线/角色守卫/证据新鲜度与引用/分层计分/
                #   改进建议 → replan/capture 与 visual/notice-list 示例重放）
                # + v0.6 数据契约对照（字段 diff 通过/扣分、spec 不可加载或无类型声明时中立）
+               # + v0.7 真跑（自动探测 tsc 编译通过/失败/可关、testCommand 与 --run-tests 执行、仅退出码信号）
 ```
 
 ## v0.3 补齐：品质锚定、治理接线、分母与自评
@@ -173,6 +174,26 @@ v0.4 能驱动循环；v0.5 讲清楚每一步谁来做、能看到什么、以�
 vs date）扣 6，代码声明了契约里没有的字段扣 6。不给 spec 输入则行为
 与从前完全一致，零配置扫描不受影响。spec 加载失败、或代码里根本没
 有类型声明时，报中立（neutral）：未验证绝不冒充已验证。
+
+## 真跑：编译和测试都实际执行（v0.7）
+
+此前有两维是在批改「纸面材料」：结构维只量体型和 import，因为没人真
+去编译；e2e 只认别人交来的结果文件。现在两维都在本地真跑：
+
+- **编译。** 显式 `compileCommand` 优先；否则只要项目有 `tsconfig.json`
+  且本地装了 TypeScript（`node_modules/.bin/tsc`），scan 就自己跑
+  `tsc --noEmit`——失败扣 40 并引用第一行错误。只执行本地二进制，绝不
+  下载任何东西。120 秒内跑不完报中立（neutral）而不是失败；
+  `"autoCompile": false` 可完全关闭自动探测。
+- **测试。** 在配置里设 `inputs.testCommand`（如 `"npm test"`），或给
+  `harness scan` 加 `--run-tests`（自动探测 `package.json` 的 test
+  脚本），scan 会在评分前先把测试套件真跑一遍。命令产出了配置的
+  `testResults` 文件就照旧解析计数；没产出则降级为「仅退出码信号」
+  并在报告里明说。命令根本跑不完（超时/启动失败）时，运行信号报
+  未验证，不编造结果。
+
+注意：真跑意味着会执行被扫项目自己的二进制与脚本——只扫你本来就敢
+自己运行的项目。
 
 ## 诚实边界（v0.5）
 

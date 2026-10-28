@@ -19,6 +19,12 @@ export const DEFAULT_CONFIG = {
   // silently — an unverified check must never look verified.
   compileCommand: null,
 
+  // When no compileCommand is configured, auto-detect a local TypeScript
+  // install (tsconfig.json + node_modules/.bin/tsc) and run a real
+  // `tsc --noEmit`. Local binaries only — a scan never downloads anything.
+  // Set to false to keep compilation strictly opt-in via compileCommand.
+  autoCompile: true,
+
   dimensions: {
     structure: {
       threshold: 85,
@@ -114,6 +120,8 @@ export const DEFAULT_CONFIG = {
     dataSpec: null, // data contract (.json: { interfaces: [{ name, fields }] }) — code type declarations are diffed against it
     designTokens: null, // tokens file (.json with "--name" keys, or .css with --var declarations)
     i18n: null, // { resources: ["path/to/locale.json", ...], callPattern?: regex source }
+    testCommand: null, // shell command the scan runs itself before scoring e2e (e.g. "npm test"); pair with testResults so the run also yields counts
+    testTimeoutMs: null, // timeout for testCommand (default 300000)
     testResults: null, // test-runner report: {passed, failed} | Jest/Vitest JSON | Playwright JSON
     e2eResults: null, // deprecated alias of testResults (same formats)
     coverage: null, // istanbul coverage-summary.json (feeds the e2e dimension)
@@ -140,6 +148,7 @@ export function mergeConfig(userConfig = {}) {
   if (userConfig.historyDir !== undefined) merged.historyDir = userConfig.historyDir;
   if (userConfig.compileCommand !== undefined)
     merged.compileCommand = userConfig.compileCommand;
+  if (userConfig.autoCompile !== undefined) merged.autoCompile = userConfig.autoCompile;
   if (userConfig.gates) merged.gates = userConfig.gates;
   if (userConfig.exemptions) merged.exemptions = userConfig.exemptions;
   if (userConfig.inputs) Object.assign(merged.inputs, userConfig.inputs);

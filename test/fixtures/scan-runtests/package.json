@@ -1,0 +1,7 @@
+{
+  "name": "scan-runtests-fixture",
+  "private": true,
+  "scripts": {
+    "test": "node fake-runner.mjs"
+  }
+}

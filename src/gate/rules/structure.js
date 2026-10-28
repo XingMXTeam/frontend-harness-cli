@@ -20,15 +20,18 @@ function splitSuggestion(rel) {
 }
 
 function compileCheck(ctx) {
-  if (ctx.compiled === null) {
-    return check("compile", null, "No compileCommand configured — compilation is unverified, not passed. Set compileCommand (e.g. \"npx tsc --noEmit\") to verify.");
+  if (ctx.compileTimedOut) {
+    return check("compile", null, `Compilation did not finish within the time limit — unverified, not passed.`);
   }
-  return check(
-    "compile",
-    ctx.compiled,
-    ctx.compiled ? "Compile command exited 0." : "Compile command failed — nothing else in this dimension matters until this is green.",
-    { points: ctx.compiled ? 0 : 40 }
-  );
+  if (ctx.compiled === null) {
+    return check("compile", null, "No compileCommand configured and no auto-detected local tsc run (needs tsconfig.json + node_modules/.bin/tsc, autoCompile not disabled) — compilation is unverified, not passed. Set compileCommand (e.g. \"npx tsc --noEmit\") to verify.");
+  }
+  const via = ctx.compileSource === "auto-tsc" ? "auto-detected local tsc --noEmit" : "compile command";
+  if (ctx.compiled) {
+    return check("compile", true, `Compilation verified: ${via} exited 0.`);
+  }
+  const detail = ctx.compileErrorLine ? ` First error: ${ctx.compileErrorLine}` : "";
+  return check("compile", false, `Compilation failed (${via}) — nothing else in this dimension matters until this is green.${detail}`, { points: 40 });
 }
 
 function sizeChecks(files, rules, ctx) {

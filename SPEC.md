@@ -139,6 +139,21 @@ v1.0, not a launch-day claim.
 
 ## Changelog
 
+- v0.7.0 — scan stops grading stale artifacts and actually runs things.
+  Structure: with no explicit compileCommand, a locally installed tsc
+  (tsconfig.json + node_modules/.bin/tsc) is auto-detected and a real
+  `tsc --noEmit` decides the compile check (failure −40, quoting the
+  first error line; a 120s timeout reports neutral, not failed;
+  `autoCompile: false` opts out; local binaries only, nothing is ever
+  downloaded). E2E: `inputs.testCommand` — or the scan CLI's
+  `--run-tests` flag, which detects package.json's test script — makes
+  the scan execute the suite itself before scoring; a results file the
+  command produces is parsed for counts as before, otherwise the run
+  degrades to an explicitly-labelled exit-code-only signal, and a
+  command that cannot complete leaves the run signal unverified.
+  This closes the "structure and e2e do not execute" gap noted in the
+  v0.6.0 entry. Trust note: these paths execute the scanned project's
+  own binaries and scripts — scan only projects you would run yourself.
 - v0.6.0 — the scan data dimension gains a reference artifact: with
   `inputs.dataSpec` pointing at a contract JSON
   (`{ interfaces: [{ name, fields }] }`), TypeScript interface/type

@@ -1,6 +1,10 @@
 // E2E dimension: a transparent composite of up to three signals —
 //
-//   run       a real test run's pass rate (strongest claim)
+//   run       a real test run's pass rate (strongest claim). Since v0.7
+//             the scan can produce this run itself (inputs.testCommand,
+//             or the CLI's --run-tests flag) instead of only grading a
+//             results file it was handed; a run without a results file
+//             degrades to an exit-code-only signal and says so.
 //   coverage  mean istanbul coverage percentage
 //   presence  share of source files with a sibling test (weakest)
 //
@@ -22,31 +26,56 @@ function loadArtifact(root, rel) {
   }
 }
 
-function runSignal(ctx, neutralNotes) {
+// Load and parse the configured results file, if any. Returns
+// { rel, parsed } on success, { rel, note } with the exact neutral-note
+// text when the file cannot back a verdict, or { rel: null } when no
+// results input is configured at all.
+function loadResultsFile(ctx) {
   const rel = ctx.inputs?.testResults || ctx.inputs?.e2eResults;
-  if (!rel) {
-    neutralNotes.push(check("e2e-results", null, "No testResults input — the run signal is absent; scoring falls back to coverage/presence signals. Provide a results file ({passed, failed}, Jest/Vitest JSON, or a Playwright JSON report) for run-based scoring."));
-    return null;
-  }
+  if (!rel) return { rel: null };
   const { data, error } = loadArtifact(ctx.root, rel);
-  if (error) {
-    neutralNotes.push(check("e2e-results", null, `Test results could not be loaded (${error}) — run signal unverified.`));
-    return null;
-  }
+  if (error) return { rel, note: `Test results could not be loaded (${error}) — run signal unverified.` };
   const parsed = parseTestResults(data);
-  if (!parsed) {
-    neutralNotes.push(check("e2e-results", null, "Test results file format not recognized (expected {passed, failed}, Jest/Vitest JSON, or Playwright JSON) — run signal unverified."));
+  if (!parsed) return { rel, note: "Test results file format not recognized (expected {passed, failed}, Jest/Vitest JSON, or Playwright JSON) — run signal unverified." };
+  if (parsed.total === 0) return { rel, note: "Test results contain no tests — run unverified." };
+  return { rel, parsed };
+}
+
+function runSignal(ctx, neutralNotes) {
+  const tr = ctx.testRun;
+  if (tr) {
+    // The scan ran the suite itself (inputs.testCommand or --run-tests).
+    // A results file the command produced outranks the bare exit code:
+    // counts decompose, an exit code only accuses.
+    const f = loadResultsFile(ctx);
+    if (f.parsed) {
+      return { key: "run", score: Math.round((f.parsed.passed / f.parsed.total) * 1000) / 10, parsed: f.parsed, rel: f.rel };
+    }
+    if (tr.error) {
+      neutralNotes.push(check("e2e-results", null, `Test command "${tr.command}" could not complete (${tr.error}) — run signal unverified.`));
+      return null;
+    }
+    return {
+      key: "run",
+      score: tr.exitCode === 0 ? 100 : 0,
+      parsed: { format: "exit-code", passed: 0, failed: 0, total: 0, exitCode: tr.exitCode, command: tr.command },
+      rel: "(test command)",
+    };
+  }
+  const f = loadResultsFile(ctx);
+  if (!f.rel) {
+    neutralNotes.push(check("e2e-results", null, "No testResults input — the run signal is absent; scoring falls back to coverage/presence signals. Provide a results file ({passed, failed}, Jest/Vitest JSON, or a Playwright JSON report), or set inputs.testCommand / pass --run-tests so the scan runs the suite itself."));
     return null;
   }
-  if (parsed.total === 0) {
-    neutralNotes.push(check("e2e-results", null, "Test results contain no tests — run unverified."));
+  if (!f.parsed) {
+    neutralNotes.push(check("e2e-results", null, f.note));
     return null;
   }
   return {
     key: "run",
-    score: Math.round((parsed.passed / parsed.total) * 1000) / 10,
-    parsed,
-    rel,
+    score: Math.round((f.parsed.passed / f.parsed.total) * 1000) / 10,
+    parsed: f.parsed,
+    rel: f.rel,
   };
 }
 
@@ -85,6 +114,12 @@ function presenceSignal(files, rules, isTestFile) {
 function signalCheck(signal, points, rules) {
   const p = signal.parsed;
   if (signal.key === "run") {
+    if (p.format === "exit-code") {
+      if (p.exitCode === 0) {
+        return check("e2e-results", true, `Test command "${p.command}" exited 0 — but no results file was produced, so per-test counts are unknown (exit-code signal only). Configure the runner to emit a JSON results file for counts.`);
+      }
+      return violation("e2e-failures", `Test command "${p.command}" exited ${p.exitCode} — the run failed. No results file to decompose the failure; configure the runner to emit a JSON results file for per-test counts.`, signal.rel, points);
+    }
     if (p.failed > 0) {
       return violation("e2e-failures", `Test run (${p.format} format): ${p.passed}/${p.total} passed, ${p.failed} failed — pass rate ${signal.score}%. A red run is a red run, however good the code looks.`, signal.rel, points);
     }

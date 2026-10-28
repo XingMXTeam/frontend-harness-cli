@@ -22,9 +22,9 @@ export function loadScanConfig(targetRoot) {
   }
 }
 
-export function runScan(targetRoot) {
+export function runScan(targetRoot, opts = {}) {
   const config = loadScanConfig(targetRoot);
-  return evaluate(targetRoot, config);
+  return evaluate(targetRoot, config, opts);
 }
 
 export { formatReport, DEFAULT_CONFIG as SCAN_DEFAULTS };

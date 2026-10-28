@@ -1,0 +1,5 @@
+{
+  "inputs": {
+    "testCommand": "node fake-fail.mjs"
+  }
+}
