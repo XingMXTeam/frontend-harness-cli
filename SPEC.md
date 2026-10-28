@@ -102,3 +102,11 @@ e.g. one Next.js app and one Vue app), including:
 a mid-run kill + resume, and a planted fatal defect that the veto catches.
 The bundled tests simulate both; the two-repo run is the release gate for
 v1.0, not a launch-day claim.
+
+## Changelog
+
+- v0.4.1 — docs: every bundled skill and the harness protocol skill ship a
+  Chinese reading edition (`SKILL.zh-CN.md` beside the operative English
+  `SKILL.md`; hosts keep loading the English file). Tests pin their presence.
+- Earlier releases (v0.1–v0.4.0) are recorded in the git history and in the
+  decisions above.
