@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync, writeFileSync, mkdirSync } from 'no
 import path from 'node:path';
 import { featureDir } from './config.js';
 import { resolveFromRoot } from './git.js';
+import { runScan } from './scan.js';
 
 /**
  * Run one rubric item. Returns { score: 0 | 0.5 | 1, detail }.
@@ -11,8 +12,19 @@ import { resolveFromRoot } from './git.js';
  * exception: an evaluator agent writes { score, note } to the item's evidence
  * file, and a judge item with no evidence scores 0.
  */
-export function runItem(root, item, timeoutMs) {
+export function runItem(root, item, timeoutMs, scanCache = new Map()) {
   switch (item.kind) {
+    case 'scan': {
+      // Sensor input, not a second verdict: read one dimension score from
+      // the gate engine and compare it with this item's own minScore.
+      const target = resolveFromRoot(root, item.path ?? '.');
+      if (!scanCache.has(target)) scanCache.set(target, runScan(target));
+      const report = scanCache.get(target);
+      const dim = report.dimensions[item.dimension];
+      if (!dim) return { score: 0, detail: `scan: no dimension "${item.dimension}" in report` };
+      const ok = dim.score >= item.minScore;
+      return { score: ok ? 1 : 0, detail: `scan ${item.dimension}=${dim.score} (min ${item.minScore}) on ${item.path ?? '.'}; sensor total=${report.totalScore}` };
+    }
     case 'command': {
       const r = spawnSync(item.command, { cwd: root, shell: true, encoding: 'utf8', timeout: timeoutMs });
       const ok = r.status === 0;
@@ -68,7 +80,8 @@ export function runItem(root, item, timeoutMs) {
  */
 export function evaluateRubric(root, rubric, config) {
   const timeoutMs = config.evaluation.commandTimeoutMs;
-  const results = rubric.items.map((item) => ({ item, ...runItem(root, item, timeoutMs) }));
+  const scanCache = new Map(); // one sensor run per target path, shared by all scan items
+  const results = rubric.items.map((item) => ({ item, ...runItem(root, item, timeoutMs, scanCache) }));
 
   const vetoed = [];
   for (const r of results) {

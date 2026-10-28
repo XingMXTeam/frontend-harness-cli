@@ -57,6 +57,52 @@ Run the self-contained demo (includes a simulated mid-run interruption):
 npm run demo
 ```
 
+## One product, three layers (unified in v0.2)
+
+This CLI began as three separate tools — a skills pack, a kernel, and a code
+gate. They are one product now, because they were always three layers of the
+same idea:
+
+- **Behavior layer — the skills pack.** Eight field-tested skills
+  (`plan-before-code`, `deterministic-eval`, `context-map`,
+  `component-from-design`, `i18n-extract`, `state-schema-first`,
+  `bug-root-cause`, `ship-checklist`), vendored from the former
+  `harness-skills` repo. They ship as *data* in `templates/skills/`:
+  `init --host claude-code` installs them next to the `harness` skill, and
+  `harness skills list|install [--project|--dir <path>] [--only a,b]`
+  manages them standalone. Skills guide the agent; they decide nothing.
+- **Kernel layer — this CLI.** State, coverage, evaluation, budgets,
+  auto-stop. The only place a verdict is ever produced.
+- **Sensor layer — the gate engine.** The five-dimension deterministic
+  scanner formerly published as `ai-code-gate` (structure / data / logic /
+  ui / e2e, AST-level checks), vendored into `src/gate/` at v0.5.0.
+
+Two rules keep the layers honest:
+
+1. **Exactly one verdict authority.** Inside the loop, the sensor's scores
+   are *inputs*: a rubric item of kind `scan` reads one dimension score and
+   compares it against the item's own `minScore`. The sensor never passes or
+   fails a feature — the rubric does.
+2. **`harness scan` stands alone.** No init, no project state, zero config
+   (it reads `gate.config.json` when present, defaults otherwise), exit code
+   mirrors the sensor result for CI — exactly how `ai-gate` behaved.
+   Equivalence tests pin the vendored engine to the original CLI's scores
+   on both bundled fixtures (good: 100/pass; bad: 64/fail), so "unified"
+   never quietly means "changed the ruler".
+
+```bash
+node bin/harness.js scan [--json] [path]        # standalone sensor report
+node bin/harness.js skills list                 # the bundled pack
+node bin/harness.js skills install --project    # into ./.claude/skills
+```
+
+A rubric item fed by the sensor looks like:
+
+```json
+{ "id": "RB-7", "requirement": "REQ-1", "level": "essential",
+  "kind": "scan", "dimension": "structure", "minScore": 85, "weight": 2 }
+```
+
 ## Evaluation with vetoes
 
 A rubric is generated **per feature**, from its requirements:
@@ -67,10 +113,11 @@ A rubric is generated **per feature**, from its requirements:
 ```
 
 - `level`: `essential | important | optional | pitfall`
-- `kind`: `command | file | grep | judge` — the first three are deterministic
-  and decided by scripts, never by a model. `judge` is for what scripts
-  cannot decide: an evaluator writes `{ "score": 0|0.5|1, "note": "…" }` to
-  an evidence file; no evidence means score 0.
+- `kind`: `command | file | grep | judge | scan` — the first three and `scan`
+  are deterministic and decided by scripts, never by a model. `judge` is for
+  what scripts cannot decide: an evaluator writes
+  `{ "score": 0|0.5|1, "note": "…" }` to an evidence file; no evidence means
+  score 0. `scan` reads a dimension score from the vendored gate engine.
 - **Veto rule**: any essential item at 0, or any pitfall triggered, fails the
   verdict *no matter how high the weighted score is*. Averages never bury a
   fatal flaw.
@@ -99,7 +146,7 @@ stack-agnostic; the pack carries the conventions. Host support today:
 `claude-code` (installs a `harness` skill + a session-start hook that injects
 the active feature), `codex` / `generic` (instruction-file integration).
 
-## Honest boundaries (v0.1)
+## Honest boundaries (v0.2)
 
 - The CLI orchestrates and evaluates; it does not spawn agents. Your host
   agent executes the packets `harness next` returns.
@@ -110,8 +157,11 @@ the active feature), `codex` / `generic` (instruction-file integration).
 ## Development
 
 ```bash
-npm test        # 11 tests: coverage gate, veto, pitfall, judge evidence,
-                # resume, SHA verification, budget pause, full loop to done
+npm test        # 21 tests: the v0.1 kernel set (coverage gate, veto, pitfall,
+                # judge evidence, resume, SHA verification, budget pause, full
+                # loop to done) + scan-score equivalence with the original
+                # ai-code-gate CLI, scan rubric items, and skills-pack
+                # install semantics (all / skip-existing / --only / unknown)
 ```
 
 MIT License.

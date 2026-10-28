@@ -1,0 +1,23 @@
+{
+  "dimensions": {
+    "structure": 85,
+    "data": 85,
+    "logic": 80,
+    "ui": 75,
+    "e2e": 60
+  },
+  "protectedPaths": [
+    "gate.config.json"
+  ],
+  "inputs": {
+    "plan": "plan.md",
+    "designTokens": "design-tokens.json",
+    "i18n": {
+      "resources": [
+        "locales/en.json"
+      ]
+    },
+    "e2eResults": "e2e-results.json",
+    "uiEvidenceDir": "ui-evidence"
+  }
+}

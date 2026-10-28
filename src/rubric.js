@@ -3,7 +3,8 @@ import path from 'node:path';
 import { featureDir } from './config.js';
 
 export const LEVELS = ['essential', 'important', 'optional', 'pitfall'];
-export const KINDS = ['command', 'file', 'grep', 'judge'];
+export const KINDS = ['command', 'file', 'grep', 'judge', 'scan'];
+export const SCAN_DIMENSIONS = ['structure', 'data', 'logic', 'ui', 'e2e'];
 
 export function rubricPath(root, feature) {
   return path.join(featureDir(root, feature), 'rubric.json');
@@ -46,6 +47,10 @@ export function validateRubric(rubric) {
     if (it.kind === 'file' && !it.path) throw new Error(`Item ${it.id}: kind=file needs a path.`);
     if (it.kind === 'grep' && (!it.path || !it.pattern)) throw new Error(`Item ${it.id}: kind=grep needs path and pattern.`);
     if (it.kind === 'judge' && !it.evidence) throw new Error(`Item ${it.id}: kind=judge needs an evidence file path (the evaluator writes {score, note} there).`);
+    if (it.kind === 'scan') {
+      if (!SCAN_DIMENSIONS.includes(it.dimension)) throw new Error(`Item ${it.id}: kind=scan needs dimension one of ${SCAN_DIMENSIONS.join('/')}.`);
+      if (typeof it.minScore !== 'number') throw new Error(`Item ${it.id}: kind=scan needs a numeric minScore.`);
+    }
     it.weight = typeof it.weight === 'number' && it.weight > 0 ? it.weight : 1;
   }
   return rubric;

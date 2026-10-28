@@ -32,16 +32,35 @@
 8. **Generic kernel, stack packs.** Anything stack-shaped (standards,
    default gate commands) lives in packs chosen at `init`. The kernel code
    contains zero stack-specific rules.
+9. **One verdict; sensors and skills are not verdicts (v0.2 unification).**
+   The former `ai-code-gate` engine is vendored into `src/gate/` as a pure
+   sensor: inside the loop its dimension scores are inputs to rubric items
+   of kind `scan`, never a parallel pass/fail. (Two scoring systems with
+   two thresholds each is exactly the lint-vs-gate double standard this
+   project exists to remove.) Standalone `harness scan` keeps the sensor's
+   own report + exit code for CI, clearly labelled as sensor output.
+   The former `harness-skills` pack is vendored as *data* under
+   `templates/skills/` and distributed by `init` / `harness skills` —
+   skills shape behavior, they contain no kernel logic, and they can be
+   revised without touching the state machine. Equivalence is enforced,
+   not asserted: tests pin the vendored engine's scores to the original
+   CLI's output on both fixtures, and pin the installer's semantics
+   (install-all / skip-existing / --only / unknown-name error).
 
-## Not in v0.1 (deliberately)
+## Not in v0.2 (deliberately)
 
 - Agent spawning / multi-agent scheduling inside the CLI.
 - A UI. Reports are Markdown/JSON on purpose.
 - Skill self-evaluation (grading changes to the workflow's own skills
-  against a golden set) — the natural v0.2, because an ungraded
-  self-improvement loop poisons its own rules over time.
+  against a golden set) — still the top candidate for the next release,
+  because an ungraded self-improvement loop poisons its own rules over
+  time. (It was the planned v0.2; the unification shipped first because
+  one product with one verdict is the precondition for grading anything.)
 - Token accounting. Budgets are cycles/retries today; token budgets need
   host cooperation and belong in the host integration layer.
+- Deleting the old repos. `ai-code-gate` and `harness-skills` stay up
+  until the unified CLI has public mileage; then they get a pointer README
+  and an archive, not a silent disappearance.
 
 ## Validation standard for calling this "generic"
 

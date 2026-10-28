@@ -8,7 +8,8 @@
  * do the planning / coding / judging through the packets `harness next` emits.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, chmodSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, chmodSync, readdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -18,6 +19,7 @@ import { loadRubric, rubricPath } from '../src/rubric.js';
 import { evaluateRubric, writeReport, runGateCommands } from '../src/evaluate.js';
 import { nextAction, applyEvaluation, checkCoverage } from '../src/orchestrate.js';
 import { isGitRepo, verifySha, headSha } from '../src/git.js';
+import { runScan, formatReport } from '../src/scan.js';
 
 const TEMPLATES = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'templates');
 const root = process.cwd();
@@ -39,6 +41,65 @@ const jsonOut = () => has('--json');
 function print(obj, human) {
   if (jsonOut()) console.log(JSON.stringify(obj, null, 2));
   else console.log(human ?? JSON.stringify(obj, null, 2));
+}
+
+// ─── skills pack (data, not logic: vendored from harness-skills) ─────────────
+const SKILLS_SRC = path.join(TEMPLATES, 'skills');
+
+export function listBundledSkills() {
+  if (!existsSync(SKILLS_SRC)) return [];
+  return readdirSync(SKILLS_SRC, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && existsSync(path.join(SKILLS_SRC, d.name, 'SKILL.md')))
+    .map((d) => d.name)
+    .sort();
+}
+
+/** Copy bundled skills into targetDir. Existing skills are skipped unless force. */
+export function installSkills(targetDir, { only = null, force = false } = {}) {
+  const names = only ?? listBundledSkills();
+  const installed = [], skipped = [], missing = [];
+  for (const name of names) {
+    const src = path.join(SKILLS_SRC, name);
+    if (!existsSync(path.join(src, 'SKILL.md'))) { missing.push(name); continue; }
+    const dst = path.join(targetDir, name);
+    if (existsSync(dst) && !force) { skipped.push(name); continue; }
+    mkdirSync(dst, { recursive: true });
+    cpSync(src, dst, { recursive: true, force: true });
+    installed.push(name);
+  }
+  return { installed, skipped, missing };
+}
+
+function cmdSkills() {
+  const sub = process.argv[3];
+  if (sub === 'list' || !sub) {
+    const names = listBundledSkills();
+    print(names, `Bundled skills (${names.length}):\n${names.map((n) => `  - ${n}`).join('\n')}`);
+    return;
+  }
+  if (sub === 'install') {
+    const onlyArg = arg('--only');
+    const only = onlyArg ? onlyArg.split(',').map((s) => s.trim()).filter(Boolean) : null;
+    const target = arg('--dir') ?? (has('--project') ? path.join(root, '.claude', 'skills') : path.join(homedir(), '.claude', 'skills'));
+    const res = installSkills(target, { only, force: has('--force') });
+    print({ target, ...res }, `Skills -> ${target}\nInstalled: ${res.installed.join(', ') || 'none'}${res.skipped.length ? `\nSkipped (exist; --force to overwrite): ${res.skipped.join(', ')}` : ''}${res.missing.length ? `\nNot found: ${res.missing.join(', ')}` : ''}`);
+    if (res.missing.length) process.exitCode = 1;
+    return;
+  }
+  fail(`Unknown skills subcommand "${sub}" (list|install).`);
+}
+
+// ─── scan (standalone sensor; no init / state required) ──────────────────────
+function cmdScan() {
+  const positional = process.argv.slice(3).filter((a) => !a.startsWith('--'));
+  const target = path.resolve(root, positional[0] ?? '.');
+  if (!existsSync(target)) fail(`Scan target does not exist: ${target}`);
+  const report = runScan(target);
+  if (jsonOut()) console.log(JSON.stringify(report, null, 2));
+  else console.log(formatReport(report));
+  // CI parity with ai-gate: the sensor's own pass/fail is the exit code when
+  // used standalone. Inside `harness eval` this report is only an input.
+  if (!report.passed) process.exitCode = 1;
 }
 
 // ─── init ────────────────────────────────────────────────────────────────────
@@ -79,8 +140,11 @@ function cmdInit() {
     const hookDst = path.join(root, '.claude', 'hooks', 'session-start.sh');
     if (existsSync(hookDst) && !force) skipped.push(path.relative(root, hookDst));
     else { mkdirSync(path.dirname(hookDst), { recursive: true }); copyFileSync(path.join(TEMPLATES, 'claude-code', 'session-start.sh'), hookDst); chmodSync(hookDst, 0o755); made.push(path.relative(root, hookDst)); }
+    const pack = installSkills(path.join(root, '.claude', 'skills'), { force });
+    made.push(...pack.installed.map((n) => `.claude/skills/${n}`));
+    skipped.push(...pack.skipped.map((n) => `.claude/skills/${n}`));
     write(path.join(harnessDir(root), 'host-setup.md'),
-      '# Claude Code host setup\n\nRegister the session-start hook in `.claude/settings.json`:\n\n```json\n{\n  "hooks": {\n    "SessionStart": [{ "hooks": [{ "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh" }] }]\n  }\n}\n```\n\nThe `harness` skill is already installed at `.claude/skills/harness/SKILL.md`.\n');
+      '# Claude Code host setup\n\nRegister the session-start hook in `.claude/settings.json`:\n\n```json\n{\n  "hooks": {\n    "SessionStart": [{ "hooks": [{ "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh" }] }]\n  }\n}\n```\n\nThe `harness` skill is already installed at `.claude/skills/harness/SKILL.md`, and the bundled skills pack (plan-before-code, deterministic-eval, …) is installed alongside it. Manage the pack with `harness skills list|install`.\n');
   } else {
     write(path.join(harnessDir(root), 'host-setup.md'),
       `# Host setup (${host})\n\nAt the start of every session, the host agent must run \`harness next <feature>\` and follow the returned action. Add that sentence to your agent instructions file (AGENTS.md / equivalent). The harness skill text for reference is in the harness-cli package: templates/claude-code/SKILL.md.\n`);
@@ -305,6 +369,8 @@ try {
     case 'resume': await cmdResume(); break;
     case 'report': cmdReport(); break;
     case 'doctor': cmdDoctor(); break;
+    case 'scan': cmdScan(); break;
+    case 'skills': cmdSkills(); break;
     default:
       console.log(`harness — generic Harness kernel for long-running AI coding
 
@@ -319,7 +385,11 @@ Usage:
   harness status [<feature>] [--json]
   harness resume <feature>              Human un-pause after a budget stop
   harness report <feature>              Markdown acceptance report
-  harness doctor                        Environment + config checks`);
+  harness doctor                        Environment + config checks
+  harness scan [path] [--json]          Standalone gate-engine scan (no init needed; CI-friendly)
+  harness skills list                   List the bundled skills pack
+  harness skills install [--project|--dir <path>] [--only a,b] [--force]
+                                        Install the bundled skills pack (default: ~/.claude/skills)`);
       if (cmd && cmd !== '--help' && cmd !== '-h') process.exit(1);
   }
 } catch (e) {
