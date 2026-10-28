@@ -10,3 +10,5 @@ review. The planner and implementer must read it before writing code.
 - Loading, empty, error and no-permission states are part of "done" for every async view.
 - State lives in Pinia stores or composables with an explicit schema — never in ad-hoc reactive objects passed down by props.
 - i18n strings go through the locale files; no hard-coded user-visible text in components.
+- Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
+- Visual regression: keep screenshot baselines for core pages and wire a pixel-diff tool (e.g. pixelmatch) as a delivery-gate command in harness.config.json; a rubric `command` item can gate on its report. The kernel does not fake this check — no baseline, no visual verdict.

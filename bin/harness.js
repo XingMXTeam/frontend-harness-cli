@@ -19,7 +19,11 @@ import { loadRubric, rubricPath } from '../src/rubric.js';
 import { evaluateRubric, writeReport, runGateCommands } from '../src/evaluate.js';
 import { nextAction, applyEvaluation, checkCoverage } from '../src/orchestrate.js';
 import { isGitRepo, verifySha, headSha } from '../src/git.js';
-import { runScan, formatReport } from '../src/scan.js';
+import { runScan, formatReport, loadScanConfig } from '../src/scan.js';
+import { verifyZone } from '../src/gate/zone.js';
+import { checkScope } from '../src/gate/scope.js';
+import { readPreviousReport, appendHistory, computeTrend } from '../src/gate/history.js';
+import { scoreSkillEval } from '../src/skills-eval.js';
 
 const TEMPLATES = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'templates');
 const root = process.cwd();
@@ -70,8 +74,36 @@ export function installSkills(targetDir, { only = null, force = false } = {}) {
   return { installed, skipped, missing };
 }
 
+function cmdSkillsEval() {
+  const casesFile = arg('--cases') ?? (existsSync(path.join(root, '.harness', 'skills-eval', 'cases.json'))
+    ? path.join(root, '.harness', 'skills-eval', 'cases.json')
+    : path.join(TEMPLATES, 'skills-eval', 'cases.json'));
+  if (!existsSync(casesFile)) fail(`Skill-eval cases file not found: ${casesFile}`);
+  const parsed = JSON.parse(readFileSync(casesFile, 'utf8'));
+  const cases = Array.isArray(parsed) ? parsed : parsed.cases;
+  if (!Array.isArray(cases) || cases.length === 0) fail(`No cases in ${casesFile}`);
+  const evidenceFile = arg('--evidence');
+  if (!evidenceFile) {
+    print({ status: 'awaiting-evidence', casesFile, cases },
+      `Skill-eval packet: ${cases.length} case(s) from ${casesFile}\nRun each prompt in a FRESH host session with the skills pack installed (never the session that edited the skills — isolation applies to the workflow's own rules too). Record which bundled skill fired, then write the evidence file:\n  [{"id": "P1", "triggered": "plan-before-code"}, {"id": "N1", "triggered": null}, ...]\nThen: harness skills eval --evidence <file> [--min-accuracy 0.9]`);
+    return;
+  }
+  const evRaw = JSON.parse(readFileSync(path.resolve(root, evidenceFile), 'utf8'));
+  const results = Array.isArray(evRaw) ? evRaw : evRaw.results;
+  if (!Array.isArray(results)) fail('Evidence file must be a JSON array (or {results: [...]}) of {id, triggered}.');
+  const minAccuracy = Number(arg('--min-accuracy', '0.9'));
+  const score = scoreSkillEval(cases, results, minAccuracy);
+  print({ casesFile, evidenceFile, ...score },
+    `Skill eval: ${score.correct}/${score.total} correct, accuracy ${score.accuracy} (min ${minAccuracy}) — ${score.verdict.toUpperCase()}` +
+    (score.missed.length ? `\nMissed/wrong: ${score.missed.map((m) => `${m.id} (want ${m.expect}, got ${m.got ?? 'none'})`).join('; ')}` : '') +
+    (score.falseTriggers.length ? `\nFalse triggers: ${score.falseTriggers.map((f) => `${f.id} -> ${f.triggered}`).join('; ')}` : '') +
+    (score.unevidenced.length ? `\nNo evidence for: ${score.unevidenced.join(', ')}` : ''));
+  if (score.verdict !== 'pass') process.exitCode = 1;
+}
+
 function cmdSkills() {
   const sub = process.argv[3];
+  if (sub === 'eval') { cmdSkillsEval(); return; }
   if (sub === 'list' || !sub) {
     const names = listBundledSkills();
     print(names, `Bundled skills (${names.length}):\n${names.map((n) => `  - ${n}`).join('\n')}`);
@@ -86,20 +118,55 @@ function cmdSkills() {
     if (res.missing.length) process.exitCode = 1;
     return;
   }
-  fail(`Unknown skills subcommand "${sub}" (list|install).`);
+  fail(`Unknown skills subcommand "${sub}" (list|install|eval).`);
 }
 
 // ─── scan (standalone sensor; no init / state required) ──────────────────────
 function cmdScan() {
-  const positional = process.argv.slice(3).filter((a) => !a.startsWith('--'));
+  const argv = process.argv.slice(3);
+  const histIdx = argv.indexOf('--history');
+  const historyDir = histIdx >= 0 ? argv[histIdx + 1] : null;
+  const positional = argv.filter((a, i) => !a.startsWith('--') && i !== histIdx + 1);
   const target = path.resolve(root, positional[0] ?? '.');
   if (!existsSync(target)) fail(`Scan target does not exist: ${target}`);
   const report = runScan(target);
+  if (historyDir) {
+    const dir = path.resolve(root, historyDir);
+    const previous = readPreviousReport(dir);
+    report.trend = computeTrend(previous, report);
+    appendHistory(dir, report);
+  }
   if (jsonOut()) console.log(JSON.stringify(report, null, 2));
   else console.log(formatReport(report));
   // CI parity with ai-gate: the sensor's own pass/fail is the exit code when
   // used standalone. Inside `harness eval` this report is only an input.
   if (!report.passed) process.exitCode = 1;
+}
+
+// ─── governance: protected zone + plan scope (gate engine, wired) ────────────
+function cmdVerifyZone() {
+  const positional = process.argv.slice(3).filter((a) => !a.startsWith('--'));
+  const target = path.resolve(root, positional[0] ?? '.');
+  if (!existsSync(target)) fail(`Target does not exist: ${target}`);
+  const res = verifyZone(target, loadScanConfig(target));
+  print(res, res.ok
+    ? `Protected zone OK${res.touched?.length ? ` (touched: ${res.touched.join(', ')} — human confirmation present)` : ' (no protected files touched)'}`
+    : `Protected zone BLOCKED: ${res.reason}\nTouched: ${(res.touched ?? []).join(', ')}`);
+  if (!res.ok) process.exitCode = 1;
+}
+
+function cmdScope() {
+  const positional = process.argv.slice(3).filter((a) => !a.startsWith('--'));
+  const plan = positional[0];
+  if (!plan) fail('Usage: harness scope <plan.md> [path]');
+  const planAbs = path.resolve(root, plan);
+  if (!existsSync(planAbs)) fail(`Plan file does not exist: ${plan}`);
+  const target = path.resolve(root, positional[1] ?? '.');
+  const res = checkScope(target, planAbs);
+  print(res, res.ok
+    ? `Scope OK${res.note ? ` — ${res.note}` : ` (${(res.patterns ?? []).length} editable pattern(s), no changes outside)`}`
+    : `Scope BLOCKED: ${res.reason}\nOutside scope: ${(res.outside ?? []).join(', ')}`);
+  if (!res.ok) process.exitCode = 1;
 }
 
 // ─── init ────────────────────────────────────────────────────────────────────
@@ -176,15 +243,18 @@ function cmdNew() {
     items: [
       { id: 'RB-1', requirement: 'REQ-1', layer: 'L1-function', level: 'essential', kind: 'file', path: 'REPLACE-WITH-REAL-PATH', minBytes: 1, weight: 3 },
       { id: 'RB-2', requirement: 'REQ-1', layer: 'L2-robustness', level: 'pitfall', kind: 'grep', path: 'REPLACE-WITH-REAL-PATH', pattern: 'TODO|FIXME|placeholder', expect: 'absent', weight: 1 },
+      { id: 'RB-3', requirement: 'REQ-1', layer: 'L4-quality', level: 'important', kind: 'judge', anchor: 'RL-1', evidence: `.harness/tasks/${feature}/evaluation/judge-rb-3.json`, weight: 2 },
     ],
   };
   writeFileSync(rubricPath(root, feature), `${JSON.stringify(rubric, null, 2)}\n`);
+  writeFileSync(path.join(dir, 'vision.md'),
+    `# Quality vision — ${feature}\n\nAnchors the rubric's judge items cite. Replace every REPLACE line during clarify.\n\nREF-1: REPLACE — the positive reference: what good looks like for this feature, and where to see it.\nANTI-1: REPLACE — the anti-reference: what to avoid, and why.\nRL-1: REPLACE — a red line that is never acceptable. (check: screenshot)\nRL-2: REPLACE — another red line. (check: command)\n`);
   const tasks = [
     { id: 'TASK-1', title: 'REPLACE: first small, independently verifiable task', requirements: ['REQ-1'], checks: [] },
   ];
   writeFileSync(path.join(dir, 'tasks.json'), `${JSON.stringify(tasks, null, 2)}\n`);
   print({ ok: true, feature, dir: path.relative(root, dir) },
-    `Created feature "${feature}" in ${path.relative(root, dir)}/\n- state.json (phase=clarify)\n- rubric.json (scaffold — the planner replaces it after clarification)\n- tasks.json (scaffold)\nNext: work the clarify step with the user, finalize rubric.json + tasks.json, then: harness clarify-done ${feature}`);
+    `Created feature "${feature}" in ${path.relative(root, dir)}/\n- state.json (phase=clarify)\n- vision.md (scaffold — quality anchors the planner finalizes during clarification)\n- rubric.json (scaffold — the planner replaces it after clarification)\n- tasks.json (scaffold)\nNext: work the clarify step with the user, finalize vision.md + rubric.json + tasks.json, then: harness clarify-done ${feature}`);
 }
 
 // ─── clarify-done ────────────────────────────────────────────────────────────
@@ -371,6 +441,8 @@ try {
     case 'doctor': cmdDoctor(); break;
     case 'scan': cmdScan(); break;
     case 'skills': cmdSkills(); break;
+    case 'verify-zone': cmdVerifyZone(); break;
+    case 'scope': cmdScope(); break;
     default:
       console.log(`harness — frontend Harness kernel for long-running AI coding
 
@@ -386,10 +458,16 @@ Usage:
   harness resume <feature>              Human un-pause after a budget stop
   harness report <feature>              Markdown acceptance report
   harness doctor                        Environment + config checks
-  harness scan [path] [--json]          Standalone gate-engine scan (no init needed; CI-friendly)
+  harness scan [path] [--json] [--history <dir>]
+                                        Standalone gate-engine scan (no init needed; CI-friendly);
+                                        --history appends the report and prints the trend vs last run
+  harness verify-zone [path]            Block if protected files changed without GATE_HUMAN_CONFIRM=yes
+  harness scope <plan.md> [path]        Block if changes fall outside the plan's declared editable scope
   harness skills list                   List the bundled skills pack
   harness skills install [--project|--dir <path>] [--only a,b] [--force]
-                                        Install the bundled skills pack (default: ~/.claude/skills)`);
+                                        Install the bundled skills pack (default: ~/.claude/skills)
+  harness skills eval [--cases <path>] [--evidence <path>] [--min-accuracy 0.9]
+                                        Emit the skill golden-set packet, or score returned evidence`);
       if (cmd && cmd !== '--help' && cmd !== '-h') process.exit(1);
   }
 } catch (e) {

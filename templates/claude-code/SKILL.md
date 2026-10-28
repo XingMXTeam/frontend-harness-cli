@@ -30,12 +30,17 @@ planning / coding / judging work it dispatches, you never invent state.
    stable-pass requirement).
 6. If `harness next` says `paused`, stop and surface the reason to the user.
    Do not raise budgets on your own.
+7. Quality is anchored, not vibes: `vision.md` holds the feature's
+   REF/ANTI/RL anchors, and every judge rubric item must cite one. A
+   requirement with genuinely no quality surface gets an explicit
+   `qualityWaivers` entry with a reason in rubric.json — never a silent
+   skip. The coverage gate enforces all of this at clarify-done.
 
 ## The loop
 
 ```
 harness next <feature>          # what should happen now
-  clarify   -> ask the user, then write rubric.json + tasks, harness clarify-done
+  clarify   -> ask the user, then write vision.md + rubric.json + tasks, harness clarify-done
   implement -> one task at a time: implement, check, commit, harness task-done
   remediate -> fix only the listed open items, commit, harness eval
   evaluate  -> harness eval (deterministic items run as commands;

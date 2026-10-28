@@ -155,7 +155,62 @@ stack-agnostic; the pack carries the conventions. Host support today:
 `claude-code` (installs a `harness` skill + a session-start hook that injects
 the active feature), `codex` / `generic` (instruction-file integration).
 
-## Honest boundaries (v0.2)
+## Quality vision: anchored, not vibes (v0.3)
+
+Coverage proves a feature *works*; it cannot prove it is *good*. Every
+feature therefore carries a `vision.md`, written during clarify:
+
+```
+REF-1:  the settings page of <product> — dense, calm, one primary action.
+ANTI-1: a card wall of equal-weight boxes; everything shouts, nothing leads.
+RL-1:   the primary action is visible without scrolling. (check: screenshot)
+RL-2:   no raw hex colors outside the token file. (check: command)
+```
+
+Rules the kernel enforces at `clarify-done` and again at `eval`:
+
+- vision.md must exist with ≥1 REF, ≥1 ANTI, ≥2 RL, and every red line
+  must declare how it is checked (`screenshot | dom | command`).
+- Every `judge` rubric item must cite an anchor (`"anchor": "RL-1"`) that
+  exists in vision.md. An unanchored quality judgment is rejected when the
+  rubric loads — it is a vibe, not a check.
+- Every requirement needs a judge item, or an explicit `qualityWaivers`
+  entry with a reason. Silence is not a waiver.
+
+## Governance: the gate may not rewrite its own rules (v0.3)
+
+The vendored gate engine always contained a protected zone and a plan
+scope guard; v0.3 wires them as commands:
+
+```bash
+node bin/harness.js verify-zone [path]   # protected files (gate.config.json by
+                                         # default) changed? blocked unless a
+                                         # human re-runs with GATE_HUMAN_CONFIRM=yes
+node bin/harness.js scope plan.md [path] # changes outside the plan's declared
+                                         # "Editable scope" section are blocked
+node bin/harness.js scan --history <dir> # append-only scan reports + trend vs
+                                         # the previous run
+```
+
+## E2E denominators and skill self-evaluation (v0.3)
+
+- A pass rate is only as honest as its denominator. Declare
+  `e2eCategories` minimums in the rubric (core / negative / boundary /
+  crossFeature / persistence / uiJourney) and the coverage gate checks
+  `e2e-cases.json` against them — N/A needs a written reason, core and
+  negative need a blocking case. `policy.minPitfallsPerRequirement`
+  likewise forces fatal flaws to be named in advance.
+- The workflow's own skills are no longer exempt from evaluation:
+  `harness skills eval` emits a golden-set packet (20 bundled cases,
+  80/20 should/should-not trigger), a fresh host session returns
+  evidence, and the kernel scores trigger accuracy against a threshold.
+  Editing a skill without re-running its eval is an ungraded change to
+  the rules themselves.
+- Visual regression is deliberately an external-tool route: the stack
+  packs say how to wire a pixel-diff tool as a delivery-gate command.
+  No baseline, no visual verdict — the kernel does not fake checks.
+
+## Honest boundaries (v0.3)
 
 - The CLI orchestrates and evaluates; it does not spawn agents. Your host
   agent executes the packets `harness next` returns.
@@ -166,11 +221,13 @@ the active feature), `codex` / `generic` (instruction-file integration).
 ## Development
 
 ```bash
-npm test        # 22 tests: the v0.1 kernel set (coverage gate, veto, pitfall,
+npm test        # 37 tests: the v0.1 kernel set (coverage gate, veto, pitfall,
                 # judge evidence, resume, SHA verification, budget pause, full
-                # loop to done) + scan-score equivalence with the original
-                # ai-code-gate CLI, scan rubric items, and skills-pack
-                # install semantics (all / skip-existing / --only / unknown)
+                # loop to done) + v0.2 unification (scan-score equivalence with
+                # the original ai-code-gate CLI, scan rubric items, skills-pack
+                # install semantics) + v0.3 (vision anchors & waivers, e2e
+                # category quotas, verify-zone / scope / scan history,
+                # skills-eval scoring)
 ```
 
 MIT License.

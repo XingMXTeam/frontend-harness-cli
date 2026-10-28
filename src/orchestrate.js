@@ -1,4 +1,8 @@
-import { loadRubric, coverageGaps } from './rubric.js';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { loadRubric, coverageGaps, e2eCategoryGaps } from './rubric.js';
+import { loadVision, visionProblems } from './vision.js';
+import { featureDir } from './config.js';
 import { record, appendFailureLog } from './state.js';
 
 /**
@@ -11,7 +15,7 @@ export function nextAction(root, state, config) {
   switch (state.phase) {
     case 'clarify': {
       if (!state.clarificationComplete) {
-        return { ...base, action: 'clarify', instruction: 'Run the clarify step with the user. Do NOT write formal plan/rubric files as final until the user confirms the summary and open questions are zero. Then write rubric.json + tasks and run: harness clarify-done ' + state.feature };
+        return { ...base, action: 'clarify', instruction: 'Run the clarify step with the user. Do NOT write formal plan/rubric files as final until the user confirms the summary and open questions are zero. Then write vision.md (REF/ANTI/RL quality anchors) + rubric.json + tasks and run: harness clarify-done ' + state.feature };
       }
       return { ...base, action: 'clarify-done', instruction: 'Clarification is marked complete; run harness clarify-done to re-check rubric coverage.' };
     }
@@ -99,5 +103,37 @@ export function checkCoverage(root, state) {
   const rubric = tryLoadRubric(root, state.feature);
   if (!rubric) return { ok: false, gaps: [{ requirement: '*', problem: 'rubric.json missing or invalid' }] };
   const gaps = coverageGaps(rubric);
+
+  // Quality anchoring: vision.md must exist and be structurally sound,
+  // judge items must cite anchors that exist, and every requirement needs
+  // a quality (judge) item — or an explicit, reasoned waiver. "We didn't
+  // think about quality for this one" must be said out loud, in writing.
+  const vision = loadVision(root, state.feature);
+  if (!vision) {
+    gaps.push({ requirement: '*', problem: 'vision.md missing — quality anchors (REF/ANTI/RL) are written during clarify, before code' });
+  } else {
+    for (const p of visionProblems(vision)) gaps.push({ requirement: '*', problem: p });
+    for (const it of rubric.items) {
+      if (it.kind === 'judge' && it.anchor && !vision.has(it.anchor)) {
+        gaps.push({ requirement: it.requirement ?? '*', problem: `item ${it.id}: cites vision anchor ${it.anchor}, which does not exist in vision.md` });
+      }
+    }
+    const waivers = new Set((rubric.qualityWaivers ?? []).map((w) => w.requirement));
+    for (const req of rubric.requirements) {
+      const hasQuality = rubric.items.some((i) => i.requirement === req.id && i.kind === 'judge');
+      if (!hasQuality && !waivers.has(req.id)) {
+        gaps.push({ requirement: req.id, problem: 'no judge (quality) item maps to this requirement and no qualityWaivers entry excuses it — add an anchored judge item or a reasoned waiver' });
+      }
+    }
+  }
+
+  // E2E category quotas (only when the rubric declares them).
+  if (rubric.e2eCategories) {
+    const casesFile = path.join(featureDir(root, state.feature), 'e2e-cases.json');
+    let cases = null;
+    if (existsSync(casesFile)) { try { cases = JSON.parse(readFileSync(casesFile, 'utf8')); } catch { cases = null; } }
+    gaps.push(...e2eCategoryGaps(rubric, cases));
+  }
+
   return { ok: gaps.length === 0, gaps, rubric };
 }

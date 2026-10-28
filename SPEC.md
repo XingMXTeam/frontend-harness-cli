@@ -56,15 +56,24 @@
     and the author's production history — is frontend evidence. A stack
     joins the supported list when a pack plus a real run earns it.
 
-## Not in v0.2 (deliberately)
+11. **Quality is anchored, governance is wired (v0.3).** Every feature
+    carries a `vision.md` of REF/ANTI/RL anchors; judge items must cite
+    an anchor, and a requirement without a quality item needs a reasoned
+    waiver — enforced by the same coverage gate, not by reviewer memory.
+    The gate engine's protected zone and plan-scope guard are first-class
+    commands (`verify-zone`, `scope`), and `scan --history` keeps an
+    append-only record with trends. E2E honesty is denominator-first:
+    declared category quotas are checked at clarify-done. Skill changes
+    are graded by `skills eval` (golden set + fresh-session evidence +
+    deterministic scoring) — the workflow's own rules are no longer the
+    one unmeasured part of the system. Visual regression stays an
+    external-tool route via gate commands: the kernel never fakes a
+    check it cannot run.
+
+## Not in v0.3 (deliberately)
 
 - Agent spawning / multi-agent scheduling inside the CLI.
 - A UI. Reports are Markdown/JSON on purpose.
-- Skill self-evaluation (grading changes to the workflow's own skills
-  against a golden set) — still the top candidate for the next release,
-  because an ungraded self-improvement loop poisons its own rules over
-  time. (It was the planned v0.2; the unification shipped first because
-  one product with one verdict is the precondition for grading anything.)
 - Token accounting. Budgets are cycles/retries today; token budgets need
   host cooperation and belong in the host integration layer.
 - Deleting the old repos. `ai-code-gate` and `harness-skills` stay up

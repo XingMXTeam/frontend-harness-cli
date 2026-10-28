@@ -21,8 +21,12 @@ function freshProject() {
   return dir;
 }
 
-function writeRubric(dir, feature, { requirements, items }) {
-  writeFileSync(path.join(dir, '.harness', 'tasks', feature, 'rubric.json'), JSON.stringify({ version: 1, feature, requirements, items }, null, 2));
+function writeRubric(dir, feature, rubric) {
+  writeFileSync(path.join(dir, '.harness', 'tasks', feature, 'rubric.json'), JSON.stringify({ version: 1, feature, ...rubric }, null, 2));
+}
+function writeVision(dir, feature) {
+  writeFileSync(path.join(dir, '.harness', 'tasks', feature, 'vision.md'),
+    'REF-1: the reference implementation behaves exactly as specified.\nANTI-1: placeholder output presented as finished work.\nRL-1: no stub content ships. (check: command)\nRL-2: output matches the requirement wording. (check: command)\n');
 }
 function writeTasks(dir, feature, tasks) {
   writeFileSync(path.join(dir, '.harness', 'tasks', feature, 'tasks.json'), JSON.stringify(tasks, null, 2));
@@ -50,8 +54,10 @@ function readyFeature(dir, feature = 'feat') {
   writeTasks(dir, feature, [
     { id: 'TASK-1', title: 'write deliverable', requirements: ['REQ-1'], checks: ['node -e "require(\'fs\').writeFileSync(\'out.txt\',\'real implementation, fully working\')"'] },
   ]);
+  writeVision(dir, feature);
   writeRubric(dir, feature, {
     requirements: [{ id: 'REQ-1', description: 'deliverable exists with real content' }],
+    qualityWaivers: [{ requirement: 'REQ-1', reason: 'fixture feature writes a plain text file — no quality surface beyond the deterministic checks' }],
     items: [
       { id: 'RB-1', requirement: 'REQ-1', level: 'essential', kind: 'file', path: 'out.txt', minBytes: 10, weight: 3 },
       { id: 'RB-2', requirement: 'REQ-1', level: 'important', kind: 'grep', path: 'out.txt', pattern: 'real implementation', expect: 'present', weight: 1 },
@@ -135,7 +141,7 @@ test('judge items score 0 without evidence and pass with evidence', () => {
   const dir = freshProject();
   const feature = readyFeature(dir);
   const rubric = JSON.parse(readFileSync(path.join(dir, '.harness', 'tasks', feature, 'rubric.json'), 'utf8'));
-  rubric.items.push({ id: 'RB-J', requirement: 'REQ-1', level: 'important', kind: 'judge', evidence: '.harness/tasks/feat/evaluation/judge-rb-j.json', weight: 5 });
+  rubric.items.push({ id: 'RB-J', requirement: 'REQ-1', level: 'important', kind: 'judge', anchor: 'RL-1', evidence: '.harness/tasks/feat/evaluation/judge-rb-j.json', weight: 5 });
   writeFileSync(path.join(dir, '.harness', 'tasks', feature, 'rubric.json'), JSON.stringify(rubric, null, 2));
   run(dir, ['task-done', feature, 'TASK-1']);
   const r1 = run(dir, ['eval', feature, '--json'], false);
@@ -216,8 +222,10 @@ test('task checks gate task-done: a failing check keeps the task pending and cou
   const dir = freshProject();
   run(dir, ['new', 'feat']);
   writeTasks(dir, 'feat', [{ id: 'TASK-1', title: 'always fails', requirements: ['REQ-1'], checks: ['node -e "process.exit(1)"'] }]);
+  writeVision(dir, 'feat');
   writeRubric(dir, 'feat', {
     requirements: [{ id: 'REQ-1', description: 'x' }],
+    qualityWaivers: [{ requirement: 'REQ-1', reason: 'task-check fixture — no quality surface' }],
     items: [{ id: 'RB-1', requirement: 'REQ-1', level: 'essential', kind: 'file', path: 'a.txt', weight: 1 }],
   });
   run(dir, ['clarify-done', 'feat']);

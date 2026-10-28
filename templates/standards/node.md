@@ -8,3 +8,4 @@ review. The planner and implementer must read it before writing code.
 - No `console.log` left in shipped code paths (use the project's logger).
 - Errors are thrown with context, never swallowed silently.
 - Files stay under 300 lines; split before they grow past it.
+- Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.

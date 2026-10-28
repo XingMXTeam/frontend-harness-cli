@@ -50,9 +50,9 @@ node bin/harness.js task-done checkout TASK-1 --sha <commit>
 node bin/harness.js eval checkout
 node bin/harness.js report checkout
 npm run demo   # 自带端到端演示，含一次模拟中途中断后的续跑
-npm test       # 22 个测试：v0.1 内核全套（覆盖门禁/否决/pitfall/judge 证据/续跑/SHA/预算停机/全流程）
-               # + scan 与原 ai-code-gate CLI 分数等价 + scan 类 rubric 条目
-               # + 技能包装语义（全装/已存在跳过/--only/未知名称报错）
+npm test       # 37 个测试：v0.1 内核全套（覆盖门禁/否决/pitfall/judge 证据/续跑/SHA/预算停机/全流程）
+               # + v0.2 统一（scan 分数等价/scan 条目/技能包装语义）
+               # + v0.3（vision 锚点与豁免/e2e 六类配额/verify-zone/scope/scan 历史/skills 自评计分）
 ```
 
 ## 一个产品，三层（v0.2 起统一）
@@ -97,7 +97,33 @@ rubric 里由传感器供数的条目长这样：
   "kind": "scan", "dimension": "structure", "minScore": 85, "weight": 2 }
 ```
 
-## 诚实边界（v0.2）
+## v0.3 补齐：品质锚定、治理接线、分母与自评
+
+- **品质愿景（quality-vision）。** 每个 feature 在澄清阶段写 `vision.md`：
+  REF（正参照）/ ANTI（反参照）/ RL（红线，每条必须注明
+  `check: screenshot|dom|command`）。覆盖门禁强制：vision 结构达标、
+  judge 条目必须引用存在的锚点、每个 requirement 要么有品质条目、
+  要么有带理由的 `qualityWaivers` 豁免——沉默不等于豁免。没锚点的品质
+  判断在 rubric 加载时就被拒绝。
+- **治理接线。** 门禁引擎里的人工保护区与可改范围守卫接成命令：
+  `harness verify-zone`（受保护文件被改且无 `GATE_HUMAN_CONFIRM=yes`
+  时拦截）、`harness scope <plan.md>`（改动超出计划「可改范围」节时
+  拦截）、`harness scan --history <dir>`（只追加的历史报告 + 与上轮
+  趋势对比）。
+- **E2E 分母受控。** rubric 可声明 `e2eCategories` 六类最低配额
+  （core / negative / boundary / crossFeature / persistence /
+  uiJourney），覆盖门禁在 clarify-done 就核对 `e2e-cases.json`：
+  N/A 必须写理由，core 与 negative 各至少一条 blocking；
+  `policy.minPitfallsPerRequirement` 可强制每个 requirement 预先
+  写明致命缺陷。
+- **Skill 自评。** `harness skills eval` 发出黄金用例包（内置 20 条，
+  应触发/不应触发 = 80/20），由全新宿主会话回填证据，内核按触发
+  准确率计分判定。改 Skill 不过自评，等于给工作流的规则裸奔改版。
+- **视觉回归走外部工具路线**：栈包写明如何把像素差工具接成交付门禁
+  命令；没有 baseline 就没有视觉判定，内核不假装能查自己查不了的
+  东西。
+
+## 诚实边界（v0.3）
 
 CLI 只做编排与测评，不自己派 Agent；宿主 Agent 执行 `harness next` 给的
 任务包。judge 类条目的品味取决于真实评判者，内核管的是格式与否决权。

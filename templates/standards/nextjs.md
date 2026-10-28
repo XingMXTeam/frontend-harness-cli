@@ -8,3 +8,5 @@ review. The planner and implementer must read it before writing code.
 - Respect the layering rules of the repo (shared code never imports route modules; routes never import each other).
 - Single file <= 300 lines, single function <= 100 lines; extract components/hooks instead of growing.
 - Loading, empty, error and no-permission states are part of "done" for every async view.
+- Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
+- Visual regression: keep screenshot baselines for core pages and wire a pixel-diff tool (e.g. pixelmatch) as a delivery-gate command in harness.config.json; a rubric `command` item can gate on its report. The kernel does not fake this check — no baseline, no visual verdict.

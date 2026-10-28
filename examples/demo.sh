@@ -29,9 +29,15 @@ d.joinpath('tasks.json').write_text(json.dumps([
    "requirements": ["REQ-1"],
    "checks": ["node -e \"require('fs').writeFileSync('greet.js', 'export const greet = (n) => \\'hello \\' + n; // real implementation, fully working')\""]}
 ], indent=2))
+d.joinpath('vision.md').write_text(
+  "REF-1: a module whose export does exactly what its name promises, nothing more.\n"
+  "ANTI-1: a stub that returns the right string for one input and nothing real.\n"
+  "RL-1: greet must be a real function, not a hard-coded lookup. (check: command)\n"
+  "RL-2: no TODO or placeholder text in shipped code. (check: command)\n")
 d.joinpath('rubric.json').write_text(json.dumps({
   "version": 1, "feature": "hello",
   "requirements": [{"id": "REQ-1", "description": "greet.js exports a working greet function"}],
+  "qualityWaivers": [{"requirement": "REQ-1", "reason": "demo feature is a pure function with no UI or quality surface beyond the deterministic checks"}],
   "items": [
     {"id": "RB-1", "requirement": "REQ-1", "level": "essential", "kind": "grep", "path": "greet.js", "pattern": "export const greet", "expect": "present", "weight": 3},
     {"id": "RB-2", "requirement": "REQ-1", "level": "essential", "kind": "command", "command": "node -e \"import('./greet.js').then(m => { if (m.greet('world') !== 'hello world') process.exit(1) })\"", "weight": 3},
