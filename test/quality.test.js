@@ -212,13 +212,15 @@ test('scan --history: appends immutable reports and prints a trend on the second
 
 // ─── skills eval ─────────────────────────────────────────────────────────────
 
-test('skills eval: packet emits the bundled golden set (20 cases, 80/20)', () => {
+test('skills eval: packet emits the bundled golden set (36 cases, ~80/20, every bundled skill covered)', () => {
   const r = run(HERE, ['skills', 'eval', '--json']);
   assert.equal(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout);
   assert.equal(out.status, 'awaiting-evidence');
-  assert.equal(out.cases.length, 20);
-  assert.equal(out.cases.filter((c) => c.expect === null).length, 4);
+  assert.equal(out.cases.length, 36);
+  assert.equal(out.cases.filter((c) => c.expect === null).length, 7);
+  const skills = JSON.parse(run(HERE, ['skills', 'list', '--json']).stdout);
+  for (const s of skills) assert.ok(out.cases.some((c) => c.expect === s), `no golden case for ${s}`);
 });
 
 test('skills eval: perfect evidence passes, degraded evidence fails', () => {
@@ -231,13 +233,13 @@ test('skills eval: perfect evidence passes, degraded evidence fails', () => {
   assert.equal(ok.status, 0, ok.stdout + ok.stderr);
   assert.equal(JSON.parse(ok.stdout).verdict, 'pass');
 
-  const degraded = perfect.map((r, i) => (i < 3 ? { ...r, triggered: null } : r));
+  const degraded = perfect.map((r, i) => (i < 4 ? { ...r, triggered: null } : r));
   writeFileSync(evFile, JSON.stringify(degraded));
   const bad = run(HERE, ['skills', 'eval', '--evidence', evFile, '--json']);
   assert.equal(bad.status, 1);
   const score = JSON.parse(bad.stdout);
   assert.equal(score.verdict, 'fail');
-  assert.equal(score.missed.length, 3);
+  assert.equal(score.missed.length, 4);
 });
 
 test('skills eval scoring: false triggers on should-not cases are counted', () => {

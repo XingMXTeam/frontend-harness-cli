@@ -2,25 +2,185 @@
   "version": 1,
   "note": "Golden set for the bundled skills pack. ~80% should-trigger / ~20% should-not. Copy into your project (.harness/skills-eval/cases.json), extend with cases from your own incidents, and re-run `harness skills eval` after EVERY skill edit.",
   "cases": [
-    { "id": "P1", "prompt": "Add a multi-step checkout with payments to this store app — start coding.", "expect": "plan-before-code" },
-    { "id": "P2", "prompt": "Migrate this codebase from REST to GraphQL.", "expect": "plan-before-code" },
-    { "id": "D1", "prompt": "How will we know this AI-generated feature actually works? Set up the checks.", "expect": "deterministic-eval" },
-    { "id": "D2", "prompt": "The agent says the feature is done — verify it objectively before we accept.", "expect": "deterministic-eval" },
-    { "id": "C1", "prompt": "I just cloned this repo — map how the frontend is structured and where things live.", "expect": "context-map" },
-    { "id": "C2", "prompt": "Before I change the router, show me what depends on it.", "expect": "context-map" },
-    { "id": "F1", "prompt": "Here is a Figma frame — build this component to match it.", "expect": "component-from-design" },
-    { "id": "F2", "prompt": "Implement this design mock as a React component, pixel-faithful.", "expect": "component-from-design" },
-    { "id": "I1", "prompt": "Hard-coded strings are everywhere in these components — pull them into locale files.", "expect": "i18n-extract" },
-    { "id": "I2", "prompt": "Prepare this page for translation into German.", "expect": "i18n-extract" },
-    { "id": "S1", "prompt": "Design the data model for a kanban board before we write any components.", "expect": "state-schema-first" },
-    { "id": "S2", "prompt": "This form state is a mess of ad-hoc objects — define a proper schema first.", "expect": "state-schema-first" },
-    { "id": "B1", "prompt": "Users report the cart total is sometimes wrong after removing an item. Fix it.", "expect": "bug-root-cause" },
-    { "id": "B2", "prompt": "This test passes locally but fails in CI intermittently — find out why.", "expect": "bug-root-cause" },
-    { "id": "H1", "prompt": "I think this PR is ready — do a final check before I merge.", "expect": "ship-checklist" },
-    { "id": "H2", "prompt": "Wrap up this feature and tell me if it is actually done.", "expect": "ship-checklist" },
-    { "id": "N1", "prompt": "Fix the typo in this README heading.", "expect": null },
-    { "id": "N2", "prompt": "Rename the variable usr to user in this one file.", "expect": null },
-    { "id": "N3", "prompt": "What does the regex /^\\d{4}-\\d{2}$/ match?", "expect": null },
-    { "id": "N4", "prompt": "Bump the version in package.json to 0.3.0.", "expect": null }
+    {
+      "id": "P1",
+      "prompt": "Add a multi-step checkout with payments to this store app \u2014 start coding.",
+      "expect": "plan-before-code"
+    },
+    {
+      "id": "P2",
+      "prompt": "Migrate this codebase from REST to GraphQL.",
+      "expect": "plan-before-code"
+    },
+    {
+      "id": "D1",
+      "prompt": "How will we know this AI-generated feature actually works? Set up the checks.",
+      "expect": "deterministic-eval"
+    },
+    {
+      "id": "D2",
+      "prompt": "The agent says the feature is done \u2014 verify it objectively before we accept.",
+      "expect": "deterministic-eval"
+    },
+    {
+      "id": "C1",
+      "prompt": "I just cloned this repo \u2014 map how the frontend is structured and where things live.",
+      "expect": "context-map"
+    },
+    {
+      "id": "C2",
+      "prompt": "Before I change the router, show me what depends on it.",
+      "expect": "context-map"
+    },
+    {
+      "id": "F1",
+      "prompt": "Here is a Figma frame \u2014 build this component to match it.",
+      "expect": "component-from-design"
+    },
+    {
+      "id": "F2",
+      "prompt": "Implement this design mock as a React component, pixel-faithful.",
+      "expect": "component-from-design"
+    },
+    {
+      "id": "I1",
+      "prompt": "Hard-coded strings are everywhere in these components \u2014 pull them into locale files.",
+      "expect": "i18n-extract"
+    },
+    {
+      "id": "I2",
+      "prompt": "Prepare this page for translation into German.",
+      "expect": "i18n-extract"
+    },
+    {
+      "id": "S1",
+      "prompt": "Design the data model for a kanban board before we write any components.",
+      "expect": "state-schema-first"
+    },
+    {
+      "id": "S2",
+      "prompt": "This form state is a mess of ad-hoc objects \u2014 define a proper schema first.",
+      "expect": "state-schema-first"
+    },
+    {
+      "id": "B1",
+      "prompt": "Users report the cart total is sometimes wrong after removing an item. Fix it.",
+      "expect": "bug-root-cause"
+    },
+    {
+      "id": "B2",
+      "prompt": "This test passes locally but fails in CI intermittently \u2014 find out why.",
+      "expect": "bug-root-cause"
+    },
+    {
+      "id": "H1",
+      "prompt": "I think this PR is ready \u2014 do a final check before I merge.",
+      "expect": "ship-checklist"
+    },
+    {
+      "id": "H2",
+      "prompt": "Wrap up this feature and tell me if it is actually done.",
+      "expect": "ship-checklist"
+    },
+    {
+      "id": "A1",
+      "prompt": "harness next says clarify for feature checkout-redesign \u2014 run the clarification round with me.",
+      "expect": "clarify-requirements"
+    },
+    {
+      "id": "A2",
+      "prompt": "The clarification summary for notice-list is confirmed with zero open questions; write the PRD.",
+      "expect": "write-prd"
+    },
+    {
+      "id": "A3",
+      "prompt": "Write vision.md with REF/ANTI/RL anchors for the dashboard feature from the confirmed quality answers.",
+      "expect": "write-quality-vision"
+    },
+    {
+      "id": "A4",
+      "prompt": "PRD and vision are done for search-filters; write the tech design and the pages.json routes.",
+      "expect": "write-tech-design"
+    },
+    {
+      "id": "A5",
+      "prompt": "Break the search-filters tech design into ordered tasks.json and plan.md for the harness.",
+      "expect": "write-dev-plan"
+    },
+    {
+      "id": "A6",
+      "prompt": "Generate rubric.json and e2e-cases.json for search-filters so harness clarify-done passes.",
+      "expect": "write-acceptance-criteria"
+    },
+    {
+      "id": "A7",
+      "prompt": "harness next returned implement-task TASK-2 for search-filters \u2014 implement it.",
+      "expect": "implement-task"
+    },
+    {
+      "id": "A8",
+      "prompt": "harness eval failed on RB-4 and RB-7 and harness next says remediate \u2014 fix them.",
+      "expect": "fix-from-report"
+    },
+    {
+      "id": "A9",
+      "prompt": "Run the harness evaluate step for search-filters: browser journeys, screenshots, judge evidence.",
+      "expect": "e2e-testing"
+    },
+    {
+      "id": "A10",
+      "prompt": "For the harness evaluation, verify the /api/notices contract independently with real requests.",
+      "expect": "api-testing"
+    },
+    {
+      "id": "A11",
+      "prompt": "TASK-3's harness check keeps failing and the cause is unclear \u2014 debug it before changing code.",
+      "expect": "systematic-debugging"
+    },
+    {
+      "id": "A12",
+      "prompt": "I'm about to run harness task-done for TASK-1 \u2014 make sure every claim is backed by fresh output.",
+      "expect": "verification-before-completion"
+    },
+    {
+      "id": "A13",
+      "prompt": "The harness feature notice-list reached done; fold what changed into the project overview.",
+      "expect": "sync-overview"
+    },
+    {
+      "id": "N1",
+      "prompt": "Fix the typo in this README heading.",
+      "expect": null
+    },
+    {
+      "id": "N2",
+      "prompt": "Rename the variable usr to user in this one file.",
+      "expect": null
+    },
+    {
+      "id": "N3",
+      "prompt": "What does the regex /^\\d{4}-\\d{2}$/ match?",
+      "expect": null
+    },
+    {
+      "id": "N4",
+      "prompt": "Bump the version in package.json to 0.3.0.",
+      "expect": null
+    },
+    {
+      "id": "N5",
+      "prompt": "Pretty-print this JSON file.",
+      "expect": null
+    },
+    {
+      "id": "N6",
+      "prompt": "Translate 'good morning' into French.",
+      "expect": null
+    },
+    {
+      "id": "N7",
+      "prompt": "List the files in the src directory.",
+      "expect": null
+    }
   ]
 }
