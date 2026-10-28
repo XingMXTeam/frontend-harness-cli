@@ -1,0 +1,5 @@
+node_modules/
+.harness/
+harness.config.json
+test-results/
+*.log
