@@ -37,6 +37,11 @@ i18n-extract）、技术栈包（**node / nextjs / vue**），加上作者十年
   `harness next` 只凭状态推出下一步；杀掉进程、新开会话，续跑点不变。
 - **预算与自动收官**：宏循环与单任务重试都有上限，耗尽自动 `paused`
   等人决策；done 需要配置轮次的稳定通过，确认轮必须来自新的评判上下文。
+- **传感器与技能包**：内置五维确定性扫描可独立运行
+  （`harness scan`，零配置、退出码对齐 CI），rubric 条目可用
+  `kind: "scan"` 读取某一维分数与自己的 `minScore` 比较——判定只归
+  内核，传感器只供数。技能包用 `harness skills list|install` 管理，
+  `init` 时一并装好。
 
 ## 快速开始
 
@@ -54,48 +59,6 @@ npm test       # 43 个测试：v0.1 内核全套（覆盖门禁/否决/pitfall/
                # + v0.2 统一（scan 分数等价/scan 条目/技能包装语义）
                # + v0.3（vision 锚点与豁免/e2e 六类配额/verify-zone/scope/scan 历史/skills 自评计分）
                # + v0.4 run 驱动（无人值守跑到 done/驱动重启续跑/澄清需人停机/Agent 失败与停滞检测）
-```
-
-## 一个产品，三层（v0.2 起统一）
-
-这套东西最初是三个独立的仓——技能包、内核、代码门禁。v0.2 把它们合成
-一个 CLI，因为它们本来就是同一件事的三层：
-
-- **行为层——技能包。** 8 个实测过的 Skill（plan-before-code、
-  deterministic-eval、context-map、component-from-design、i18n-extract、
-  state-schema-first、bug-root-cause、ship-checklist），源自原
-  `harness-skills` 仓，以纯数据形式放在 `templates/skills/`：
-  `init --host claude-code` 会连同 `harness` skill 一起装好，也可用
-  `harness skills list|install [--project|--dir <路径>] [--only a,b]`
-  单独管理。Skill 只引导 Agent，不做任何判定。
-- **内核层——本 CLI。** 状态、覆盖门禁、测评、预算、自动收官。
-  全产品唯一产生 verdict（判定）的地方。
-- **传感器层——门禁引擎。** 原 `ai-code-gate` 的五维确定性扫描
-  （structure / data / logic / ui / e2e，AST 级检查），以 v0.5.0 原样
-  收进 `src/gate/`。
-
-两条规矩保证三层不打架：
-
-1. **只有一个判定权威。** 在长程循环里，传感器的分数只是*输入*：
-   rubric 里 `kind: "scan"` 的条目读取某一维分数，与条目自己的
-   `minScore` 比较。传感器永远不判一个 feature 过不过——判定只归内核。
-2. **`harness scan` 可独立使用。** 不需要 init、不需要项目状态、零配置
-   （有 `gate.config.json` 就读、没有用默认），退出码与传感器结果一致，
-   供 CI 使用——与原 `ai-gate` 的用法完全相同。等价性测试把收进来的引擎
-   与原 CLI 在两套自带样例上的分数钉死（good：100/过；bad：64/不过），
-   保证「统一」不会悄悄变成「换了把尺子」。
-
-```bash
-node bin/harness.js scan [--json] [路径]         # 独立传感器报告
-node bin/harness.js skills list                  # 查看内置技能包
-node bin/harness.js skills install --project     # 装到 ./.claude/skills
-```
-
-rubric 里由传感器供数的条目长这样：
-
-```json
-{ "id": "RB-7", "requirement": "REQ-1", "level": "essential",
-  "kind": "scan", "dimension": "structure", "minScore": 85, "weight": 2 }
 ```
 
 ## v0.3 补齐：品质锚定、治理接线、分母与自评

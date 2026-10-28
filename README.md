@@ -66,52 +66,6 @@ Run the self-contained demo (includes a simulated mid-run interruption):
 npm run demo
 ```
 
-## One product, three layers (unified in v0.2)
-
-This CLI began as three separate tools — a skills pack, a kernel, and a code
-gate. They are one product now, because they were always three layers of the
-same idea:
-
-- **Behavior layer — the skills pack.** Eight field-tested skills
-  (`plan-before-code`, `deterministic-eval`, `context-map`,
-  `component-from-design`, `i18n-extract`, `state-schema-first`,
-  `bug-root-cause`, `ship-checklist`), vendored from the former
-  `harness-skills` repo. They ship as *data* in `templates/skills/`:
-  `init --host claude-code` installs them next to the `harness` skill, and
-  `harness skills list|install [--project|--dir <path>] [--only a,b]`
-  manages them standalone. Skills guide the agent; they decide nothing.
-- **Kernel layer — this CLI.** State, coverage, evaluation, budgets,
-  auto-stop. The only place a verdict is ever produced.
-- **Sensor layer — the gate engine.** The five-dimension deterministic
-  scanner formerly published as `ai-code-gate` (structure / data / logic /
-  ui / e2e, AST-level checks), vendored into `src/gate/` at v0.5.0.
-
-Two rules keep the layers honest:
-
-1. **Exactly one verdict authority.** Inside the loop, the sensor's scores
-   are *inputs*: a rubric item of kind `scan` reads one dimension score and
-   compares it against the item's own `minScore`. The sensor never passes or
-   fails a feature — the rubric does.
-2. **`harness scan` stands alone.** No init, no project state, zero config
-   (it reads `gate.config.json` when present, defaults otherwise), exit code
-   mirrors the sensor result for CI — exactly how `ai-gate` behaved.
-   Equivalence tests pin the vendored engine to the original CLI's scores
-   on both bundled fixtures (good: 100/pass; bad: 64/fail), so "unified"
-   never quietly means "changed the ruler".
-
-```bash
-node bin/harness.js scan [--json] [path]        # standalone sensor report
-node bin/harness.js skills list                 # the bundled pack
-node bin/harness.js skills install --project    # into ./.claude/skills
-```
-
-A rubric item fed by the sensor looks like:
-
-```json
-{ "id": "RB-7", "requirement": "REQ-1", "level": "essential",
-  "kind": "scan", "dimension": "structure", "minScore": 85, "weight": 2 }
-```
-
 ## Evaluation with vetoes
 
 A rubric is generated **per feature**, from its requirements:
@@ -127,6 +81,16 @@ A rubric is generated **per feature**, from its requirements:
   what scripts cannot decide: an evaluator writes
   `{ "score": 0|0.5|1, "note": "…" }` to an evidence file; no evidence means
   score 0. `scan` reads a dimension score from the vendored gate engine.
+
+  The bundled five-dimension scanner also runs standalone —
+  `harness scan [--json] [path]`, no init, zero config, CI exit codes —
+  and `harness skills list|install` manages the bundled skills pack.
+  A sensor-fed rubric item looks like:
+
+  ```json
+  { "id": "RB-7", "requirement": "REQ-1", "level": "essential",
+    "kind": "scan", "dimension": "structure", "minScore": 85, "weight": 2 }
+  ```
 - **Veto rule**: any essential item at 0, or any pitfall triggered, fails the
   verdict *no matter how high the weighted score is*. Averages never bury a
   fatal flaw.
