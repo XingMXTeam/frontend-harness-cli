@@ -41,7 +41,9 @@ i18n-extract）、技术栈包（**node / nextjs / vue**），加上作者十年
   （`harness scan`，零配置、退出码对齐 CI），rubric 条目可用
   `kind: "scan"` 读取某一维分数与自己的 `minScore` 比较——判定只归
   内核，传感器只供数。技能包用 `harness skills list|install` 管理，
-  `init` 时一并装好。
+  `init` 时一并装好。每个内置 skill（以及 `harness` 协议 skill）
+  都附中文阅读版：与生效英文版同目录的 `SKILL.zh-CN.md`；宿主加载的
+  始终是英文 `SKILL.md`，中文版只供阅读。
 
 ## 快速开始
 

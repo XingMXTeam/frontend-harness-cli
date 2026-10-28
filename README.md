@@ -84,7 +84,9 @@ A rubric is generated **per feature**, from its requirements:
 
   The bundled five-dimension scanner also runs standalone —
   `harness scan [--json] [path]`, no init, zero config, CI exit codes —
-  and `harness skills list|install` manages the bundled skills pack.
+  and `harness skills list|install` manages the bundled skills pack. Each bundled skill (and the `harness`
+  protocol skill) ships with a Chinese reading edition — `SKILL.zh-CN.md`
+  beside the operative English `SKILL.md`, which stays the file hosts load.
   A sensor-fed rubric item looks like:
 
   ```json

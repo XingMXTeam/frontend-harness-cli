@@ -85,7 +85,14 @@ test('skills install: installs all, re-run skips all, --only filters, unknown na
   let r = run(HERE, ['skills', 'install', '--dir', target, '--json']);
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(JSON.parse(r.stdout).installed, EXPECTED_SKILLS);
-  for (const name of EXPECTED_SKILLS) assert.ok(existsSync(path.join(target, name, 'SKILL.md')), name);
+  for (const name of EXPECTED_SKILLS) {
+    assert.ok(existsSync(path.join(target, name, 'SKILL.md')), name);
+    // every skill ships a Chinese reading edition next to the operative file
+    const zh = readFileSync(path.join(target, name, 'SKILL.zh-CN.md'), 'utf8');
+    assert.ok(zh.includes('中文阅读版'), `${name} zh-CN reading edition`);
+  }
+  const harnessZh = readFileSync(path.join(HERE, '..', 'templates', 'claude-code', 'SKILL.zh-CN.md'), 'utf8');
+  assert.ok(harnessZh.includes('中文阅读版'), 'harness skill zh-CN reading edition');
 
   r = run(HERE, ['skills', 'install', '--dir', target, '--json']);
   const second = JSON.parse(r.stdout);
