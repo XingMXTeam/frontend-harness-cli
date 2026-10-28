@@ -70,12 +70,26 @@
     external-tool route via gate commands: the kernel never fakes a
     check it cannot run.
 
-## Not in v0.3 (deliberately)
+12. **A driver, not a runtime (v0.4).** `harness run` closes the loop
+    without violating decision 2: the kernel still never calls an LLM.
+    The driver is a separate, deliberately stupid layer — it reads the
+    next action from state, runs kernel steps itself, dispatches agent
+    steps to a host agent CLI (`claude -p`, `codex exec`, or any
+    `--agent-cmd`), and stops on explicit conditions only (done /
+    paused / needs-human / budgets / agent-failing / stalled). It holds
+    no state, so killing and restarting the driver is a non-event.
+    Clarification remains a human stop in driver mode too: automating
+    the user's answers would corrupt every anchor downstream.
 
-- Agent spawning / multi-agent scheduling inside the CLI.
+## Not in v0.4 (deliberately)
+
+- Multi-agent scheduling / parallel task execution. The loop is
+  sequential by design; parallelism multiplies every failure mode the
+  kernel exists to contain.
 - A UI. Reports are Markdown/JSON on purpose.
-- Token accounting. Budgets are cycles/retries today; token budgets need
-  host cooperation and belong in the host integration layer.
+- Token accounting. Budgets are cycles/retries/steps/minutes today;
+  token budgets need host cooperation and belong in the host
+  integration layer.
 - Deleting the old repos. `ai-code-gate` and `harness-skills` stay up
   until the unified CLI has public mileage; then they get a pointer README
   and an archive, not a silent disappearance.

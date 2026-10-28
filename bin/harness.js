@@ -24,6 +24,7 @@ import { verifyZone } from '../src/gate/zone.js';
 import { checkScope } from '../src/gate/scope.js';
 import { readPreviousReport, appendHistory, computeTrend } from '../src/gate/history.js';
 import { scoreSkillEval } from '../src/skills-eval.js';
+import { runLoop, AGENT_TEMPLATES, makeKernelExec, makeAgentExec } from '../src/run.js';
 
 const TEMPLATES = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'templates');
 const root = process.cwd();
@@ -373,6 +374,36 @@ function cmdGate() {
   if (!result.passed) process.exit(1);
 }
 
+// ─── run: the driver (kernel loop + headless host-agent dispatch) ────────────
+function cmdRun() {
+  const feature = process.argv[3];
+  if (!feature) fail('Usage: harness run <feature> [--agent claude-code|codex] [--agent-cmd "..."] [--max-steps 20] [--max-minutes 240]');
+  const config = loadConfig(root);
+  let template = arg('--agent-cmd');
+  if (!template) {
+    const agentName = arg('--agent', config.host);
+    template = AGENT_TEMPLATES[agentName];
+    if (!template) fail(`No built-in agent command for "${agentName}". Pass --agent-cmd "<command with {prompt}>" (the packet is passed as one argument, or on stdin when no {prompt} placeholder is present).`);
+  }
+  const binPath = fileURLToPath(import.meta.url);
+  const deps = {
+    execKernel: makeKernelExec(binPath),
+    execAgent: makeAgentExec(template, { stepTimeoutMs: Number(arg('--step-timeout', '1800')) * 1000 }),
+  };
+  const started = Date.now();
+  const summary = runLoop(root, feature, config, deps, {
+    maxSteps: Number(arg('--max-steps', '20')),
+    maxMinutes: Number(arg('--max-minutes', '240')),
+    onStep: (entry) => {
+      if (!jsonOut()) console.log(`[run] ${entry.step === 'kernel' ? 'kernel' : `step ${entry.step}`}: ${entry.action}${entry.verdict ? ` -> ${entry.verdict}` : ''}${entry.evalVerdict ? ` + eval -> ${entry.evalVerdict}` : ''}${entry.stalled ? ' (no state change)' : ''}`);
+    },
+  });
+  const mins = Math.round((Date.now() - started) / 600) / 100;
+  print({ ...summary, minutes: mins },
+    `[run] ${summary.status.toUpperCase()} — feature "${feature}" phase=${summary.phase ?? '?'} after ${summary.steps} agent step(s), ${mins} min${summary.reason ? `\nReason: ${summary.reason}` : ''}\n${summary.status === 'done' ? `Report: harness report ${feature}` : `Continue: harness run ${feature} (state decides where it resumes)`}`);
+  if (summary.status !== 'done') process.exitCode = 1;
+}
+
 // ─── resume / report / doctor ────────────────────────────────────────────────
 async function cmdResume() {
   const feature = process.argv[3];
@@ -443,6 +474,7 @@ try {
     case 'skills': cmdSkills(); break;
     case 'verify-zone': cmdVerifyZone(); break;
     case 'scope': cmdScope(); break;
+    case 'run': cmdRun(); break;
     default:
       console.log(`harness — frontend Harness kernel for long-running AI coding
 
@@ -467,7 +499,11 @@ Usage:
   harness skills install [--project|--dir <path>] [--only a,b] [--force]
                                         Install the bundled skills pack (default: ~/.claude/skills)
   harness skills eval [--cases <path>] [--evidence <path>] [--min-accuracy 0.9]
-                                        Emit the skill golden-set packet, or score returned evidence`);
+                                        Emit the skill golden-set packet, or score returned evidence
+  harness run <feature> [--agent claude-code|codex] [--agent-cmd "..."] [--max-steps 20] [--max-minutes 240] [--step-timeout 1800]
+                                        Drive the loop unattended: kernel steps run directly,
+                                        agent steps dispatch to the host agent CLI headless.
+                                        Stops on done / paused / needs-human / stall / budget.`);
       if (cmd && cmd !== '--help' && cmd !== '-h') process.exit(1);
   }
 } catch (e) {

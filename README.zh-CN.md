@@ -50,9 +50,10 @@ node bin/harness.js task-done checkout TASK-1 --sha <commit>
 node bin/harness.js eval checkout
 node bin/harness.js report checkout
 npm run demo   # 自带端到端演示，含一次模拟中途中断后的续跑
-npm test       # 37 个测试：v0.1 内核全套（覆盖门禁/否决/pitfall/judge 证据/续跑/SHA/预算停机/全流程）
+npm test       # 43 个测试：v0.1 内核全套（覆盖门禁/否决/pitfall/judge 证据/续跑/SHA/预算停机/全流程）
                # + v0.2 统一（scan 分数等价/scan 条目/技能包装语义）
                # + v0.3（vision 锚点与豁免/e2e 六类配额/verify-zone/scope/scan 历史/skills 自评计分）
+               # + v0.4 run 驱动（无人值守跑到 done/驱动重启续跑/澄清需人停机/Agent 失败与停滞检测）
 ```
 
 ## 一个产品，三层（v0.2 起统一）
@@ -123,11 +124,32 @@ rubric 里由传感器供数的条目长这样：
   命令；没有 baseline 就没有视觉判定，内核不假装能查自己查不了的
   东西。
 
-## 诚实边界（v0.3）
+## 真长程：`harness run`（v0.4）
 
-CLI 只做编排与测评，不自己派 Agent；宿主 Agent 执行 `harness next` 给的
-任务包。judge 类条目的品味取决于真实评判者，内核管的是格式与否决权。
-完整接线的是 Claude Code（skill + session-start hook），Codex/generic
-为指令级接入。
+内核不调 LLM——这条没变。v0.4 补的是**驱动层**：一个自身没有任何
+智能的循环，它向内核问下一步，内核步骤（clarify-done、eval）自己
+直接跑，Agent 步骤则以无头方式派给宿主 Agent 的命令行：
+
+```bash
+node bin/harness.js run checkout --agent claude-code   # 或 codex
+node bin/harness.js run checkout --agent-cmd "my-agent --headless {prompt}"
+npm run demo:run   # 用替身 Agent 演示无人值守全程，含一次驱动重启
+```
+
+停机条件全部显式、绝不静默：**done**（完成）、**paused**（内核预算
+耗尽，等人决定）、**needs-human**（澄清环节——驱动不会替用户编答案）、
+**max-steps / timeout**（重跑即续，驱动自身不存状态，靠内核文件
+续跑）、**agent-failing**（宿主 CLI 连续报错）、**stalled**（Agent
+跑了一步但状态签名毫无变化，计一次停滞，两次结束运行——这是
+「禁止停滞」的机械化执行，不靠口头约束）。
+
+## 诚实边界（v0.4）
+
+内核只做编排与测评，永不调用 LLM；`harness run` 驱动层把任务包派给
+宿主 Agent 的命令行（Claude Code、Codex，或 --agent-cmd 指定的任意
+命令）——智能是宿主的，纪律是内核的。不用 run 时，宿主会话也可以
+照 `harness next` 交互式地走同一套循环。judge 类条目的品味取决于
+真实评判者，内核管的是格式与否决权。完整接线的是 Claude Code
+（skill + session-start hook），Codex/generic 为指令级接入。
 
 MIT License.

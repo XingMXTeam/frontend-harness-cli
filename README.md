@@ -210,10 +210,36 @@ node bin/harness.js scan --history <dir> # append-only scan reports + trend vs
   packs say how to wire a pixel-diff tool as a delivery-gate command.
   No baseline, no visual verdict — the kernel does not fake checks.
 
-## Honest boundaries (v0.3)
+## True long-running: `harness run` (v0.4)
 
-- The CLI orchestrates and evaluates; it does not spawn agents. Your host
-  agent executes the packets `harness next` returns.
+The kernel never calls an LLM — that has not changed. What v0.4 adds is
+the missing **driver**: a loop with no intelligence of its own that asks
+the kernel what happens next, runs kernel steps (`clarify-done`, `eval`)
+directly, and dispatches agent steps to a host agent CLI, headless:
+
+```bash
+node bin/harness.js run checkout --agent claude-code   # or codex
+node bin/harness.js run checkout --agent-cmd "my-agent --headless {prompt}"
+node bin/harness.js run checkout --max-steps 20 --max-minutes 240
+npm run demo:run   # unattended run with a stand-in agent, incl. a driver restart
+```
+
+Stop conditions are explicit, never silent: **done**, **paused** (kernel
+budget — a human decides), **needs-human** (clarification: the driver
+will not fabricate user answers), **max-steps / timeout** (re-run to
+continue — the driver holds no state, the kernel's files resume the
+work), **agent-failing** (host CLI keeps erroring), and **stalled** —
+an agent step that changes nothing in the state signature counts
+against the run; two in a row end it. That last one is the "no
+stagnation" rule, enforced mechanically instead of by exhortation.
+
+## Honest boundaries (v0.4)
+
+- The kernel orchestrates and evaluates; it never calls an LLM.
+  `harness run` dispatches packets to a host agent CLI (Claude Code,
+  Codex, or any command via `--agent-cmd`) — the intelligence is the
+  host's, the discipline is the kernel's. Without `run`, a host session
+  drives the same loop interactively via `harness next`.
 - Judge-kind items depend on a real evaluator producing evidence; the kernel
   enforces the *format and the veto*, not the judge's taste.
 - One host is fully wired (Claude Code). Codex/generic are instruction-level.
@@ -221,13 +247,15 @@ node bin/harness.js scan --history <dir> # append-only scan reports + trend vs
 ## Development
 
 ```bash
-npm test        # 37 tests: the v0.1 kernel set (coverage gate, veto, pitfall,
+npm test        # 43 tests: the v0.1 kernel set (coverage gate, veto, pitfall,
                 # judge evidence, resume, SHA verification, budget pause, full
                 # loop to done) + v0.2 unification (scan-score equivalence with
                 # the original ai-code-gate CLI, scan rubric items, skills-pack
                 # install semantics) + v0.3 (vision anchors & waivers, e2e
                 # category quotas, verify-zone / scope / scan history,
-                # skills-eval scoring)
+                # skills-eval scoring) + v0.4 run driver (unattended run to
+                # done, driver restart resume, needs-human stop, agent
+                # failure and stall detection)
 ```
 
 MIT License.
