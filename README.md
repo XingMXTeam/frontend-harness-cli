@@ -51,6 +51,31 @@ clarify ──(user confirms; rubric coverage gate)──▶ implement          
  delivery gate ──▶ done          budget exhausted at any point ──▶ paused (human decides)
 ```
 
+## Start with one prompt
+
+You don't have to install or learn the CLI yourself. Paste this prompt into
+Claude Code, Codex, or any agent runtime opened in your project — the agent
+clones the CLI, initializes your repo, and works under the harness protocol
+from then on. You stay in the loop at exactly two points: confirming the
+plan, and whenever the harness pauses.
+
+```text
+Set up frontend-harness-cli in this project and use it for all feature work from now on.
+
+1. Get the CLI: if a `harness` command is not available, run
+   git clone https://github.com/XingMXTeam/frontend-harness-cli.git ~/.frontend-harness-cli
+   and use `node ~/.frontend-harness-cli/bin/harness.js` wherever the steps below say `harness`.
+2. Initialize this repo (do not overwrite files that already exist):
+   harness init --stack <pick what this repo uses: nextjs | react | vue | node> --host <claude-code if you are Claude Code, codex if you are Codex, otherwise generic>
+3. Follow the harness protocol from now on:
+   - Your first action for any feature work is `harness next <feature>`; do exactly the action it returns.
+   - Never edit .harness/tasks/*/state.json by hand — every state change goes through a harness command.
+   - Never declare a feature done yourself; only a passing `harness eval` plus the delivery gate can set done.
+4. Ask me which feature to start. Create it with `harness new <feature>` — or `harness new <feature> --prd <file>` if I give you a PRD document — then drive it through clarify -> implement -> evaluate -> verify -> done. Ask me only at the clarify confirmation, and again if the harness pauses.
+```
+
+Manual setup instead? See Quick start below.
+
 ## Quick start
 
 ```bash
