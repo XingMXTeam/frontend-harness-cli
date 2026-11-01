@@ -15,6 +15,15 @@ export function nextAction(root, state, config) {
   switch (state.phase) {
     case 'clarify': {
       if (!state.clarificationComplete) {
+        if (state.prd?.source === 'imported') {
+          const p = state.prd;
+          const numbering = p.numberingComplete
+            ? `${p.requirements} requirement(s) numbered REQ-n with no gaps`
+            : p.requirements > 0
+              ? `numbering has gaps (missing: ${(p.missingNumbers ?? []).join(', ') || 'unknown'}) — add the missing REQ-n ids to prd.md in place, preserving the user's wording; never renumber existing ids`
+              : 'no REQ-n numbering found — add REQ-n ids to the requirement lines in prd.md in place, preserving the user\'s wording';
+          return { ...base, action: 'clarify', prdImported: true, instruction: `prd.md was imported from "${p.from}" (${numbering}). SHORTENED clarify: do NOT re-interview the whole feature and do NOT rewrite the PRD. Present the imported PRD to the user for confirmation and ask ONLY about gaps: decisions the PRD leaves open, plus the numbering state above. Record the confirmation in clarification/summary.md (confirmed-by-user, open-questions: 0), then write vision.md (REF/ANTI/RL quality anchors) + rubric.json (requirements lifted verbatim from prd.md's REQ ids) + tasks.json and run: harness clarify-done ${state.feature}` };
+        }
         return { ...base, action: 'clarify', instruction: 'Run the clarify step with the user. Do NOT write formal plan/rubric files as final until the user confirms the summary and open questions are zero. Then write vision.md (REF/ANTI/RL quality anchors) + rubric.json + tasks and run: harness clarify-done ' + state.feature };
       }
       return { ...base, action: 'clarify-done', instruction: 'Clarification is marked complete; run harness clarify-done to re-check rubric coverage.' };

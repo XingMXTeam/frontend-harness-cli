@@ -18,6 +18,28 @@ order this skill exists to prevent.
 Skip it for: features whose `clarification/summary.md` already says
 `confirmed-by-user: yes` and `open-questions: 0` (go to `write-prd`).
 
+## Imported PRD mode
+
+If `state.json` says `prd.source: "imported"`, the user arrived with a
+finished PRD — `prd.md` already exists in the feature dir. The interview
+shrinks to gaps only:
+
+- Read `prd.md` first. Do not re-ask anything it already answers,
+  including whichever of the eleven modules it covers.
+- Ask only about: decisions the PRD leaves open, contradictions inside
+  it, and quality expectations (module 11) if the PRD says nothing
+  checkable about them.
+- If the kernel reported numbering gaps at import, the planner adds the
+  missing `REQ-n` ids to `prd.md` **in place** — the user's wording is
+  never rewritten and existing ids are never renumbered.
+- The imported `prd.md` is an input, not a draft: the
+  no-formal-files-before-confirmation rule governs files the planner
+  authors, and this one was authored by the user.
+- `summary.md` in this mode confirms the imported PRD: it references the
+  file, lists the gaps that were closed, and ends with the same
+  `confirmed-by-user` / `open-questions: 0` lines.
+- The next skill is still `write-prd` — in its normalize-only mode.
+
 ## Draft area vs formal files
 
 Until the user confirms, write **only** under
@@ -105,7 +127,8 @@ coverage table: module → covered yes/no → where answered.
 
 ## Done Criteria
 
-- All eleven modules covered; stack decision explicit.
+- All eleven modules covered (in imported mode: covered by the PRD or
+  closed as gaps); stack decision explicit.
 - `summary.md` carries `confirmed-by-user: yes` with the user's words and
   `open-questions: 0`.
 - No formal file exists yet. Next skill: `write-prd`.

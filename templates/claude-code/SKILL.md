@@ -72,6 +72,7 @@ user, or a blocker you cannot clear (say which).
 ```
 harness next <feature>                 # what should happen now
   clarify            -> planner: clarify-requirements, then the write-* chain; harness clarify-done
+                        (feature created with --prd: clarify is confirm + gaps only — the imported prd.md is the user's contract, never rewritten; write-prd runs normalize-only)
   implement-task     -> developer: implement-task skill; harness task-done <f> <task> --sha <sha>
   replan             -> planner: answer RS-n suggestions; harness replan-done <f>
   remediate          -> developer: fix-from-report skill; harness remediate-done <f> --sha <sha>

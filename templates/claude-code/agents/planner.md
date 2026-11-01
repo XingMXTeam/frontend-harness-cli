@@ -40,6 +40,13 @@ them fail in ways nobody can see.
 
 ## Action: clarify
 
+**Imported PRD variant:** if your packet's `prdSource.source` is
+`"imported"`, the user arrived with a finished PRD. `clarify-requirements`
+runs gap-only (confirm the imported document, close what it leaves open)
+and `write-prd` runs normalize-only (complete the REQ-n numbering in
+place if the import reported gaps). The imported `prd.md` is the user's
+contract — never rewrite it, never renumber existing ids.
+
 Run the skills in order — each one's precondition is the previous one's
 output:
 

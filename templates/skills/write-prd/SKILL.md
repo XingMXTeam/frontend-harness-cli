@@ -9,6 +9,25 @@ Turn the confirmed summary into the product contract: the problem, who
 has it, what the feature must do, and what it will not do — in words a
 tester can check.
 
+## Mode check — imported PRD
+
+If `prd.md` already exists in the feature dir and `state.json` marks
+`prd.source: "imported"`, do NOT author a new PRD. The user's document
+is the contract; this skill runs in normalize-only mode:
+
+- Verify the nine sections below are present or consciously absent. A
+  missing section becomes a gap question for the user (via
+  `clarify-requirements`) — never invented content.
+- Add missing `REQ-n` numbering in place when the import reported gaps,
+  preserving wording; never renumber existing ids, never reword a
+  requirement.
+- Check the "what good looks like" material: a concrete quality target
+  stays untouched; vibes-only text ("clean and modern") is a gap
+  question, not an editing invitation.
+- Done when numbering is complete (REQ-1..n, no gaps) and every section
+  gap is closed by the user or listed as an open question. Next skill:
+  `write-quality-vision`, as usual.
+
 ## Gate
 
 - `clarification/summary.md` exists with `confirmed-by-user: yes` and

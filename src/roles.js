@@ -134,7 +134,9 @@ export function buildRolePacket(root, state, action, { rubric = null, stepId = n
     const packet = {
       ...base,
       requirements: rubric?.requirements ?? [],
+      prdSource: state.prd ?? null,
       inputs: {
+        prd: existing(root, [path.join(fdir, 'prd.md')]),
         rubric: rel(root, path.join(fdir, 'rubric.json')),
         vision: existing(root, [path.join(fdir, 'vision.md')]),
         tasks: existing(root, [path.join(fdir, 'tasks.json')]),

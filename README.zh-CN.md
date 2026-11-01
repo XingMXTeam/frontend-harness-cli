@@ -51,6 +51,9 @@ Codex…）里负责规划、写码和评判，CLI 负责状态、覆盖门禁�
 ```bash
 node bin/harness.js init --stack react --host claude-code  # 栈: node/nextjs/vue/react; 宿主: claude-code/codex/generic
 node bin/harness.js new checkout --title "结算流程"
+# 已有成稿 PRD？直接导入——原文复制，rubric 的需求从它的 REQ-n 编号播种
+# （缺号只报告、永不重编），clarify 缩减为确认 + 补缺口：
+#   node bin/harness.js new checkout --prd ./checkout-prd.md
 # planner：与用户澄清，再按 write-* 链写 prd.md、vision.md、tech-design.md + pages.json、
 # tasks.json、rubric.json + e2e-cases.json
 node bin/harness.js clarify-done checkout

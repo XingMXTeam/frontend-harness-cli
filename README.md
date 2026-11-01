@@ -56,6 +56,10 @@ clarify ──(user confirms; rubric coverage gate)──▶ implement          
 ```bash
 node bin/harness.js init --stack react --host claude-code  # or node/nextjs/vue, codex/generic
 node bin/harness.js new checkout --title "Checkout flow"
+# already have a finished PRD? Import it instead — copied verbatim, rubric
+# requirements seeded from its REQ-n numbering (gaps reported, never renumbered),
+# and clarify shrinks to confirm + fill-the-gaps:
+#   node bin/harness.js new checkout --prd ./checkout-prd.md
 # planner: clarify with the user, then the write-* chain writes prd.md, vision.md,
 # tech-design.md + pages.json, tasks.json, rubric.json + e2e-cases.json
 node bin/harness.js clarify-done checkout    # coverage gate: every requirement needs an essential check

@@ -42,6 +42,7 @@
 ```
 harness next <feature>                 # 现在该做什么
   clarify            -> planner：clarify-requirements，再走 write-* 链；harness clarify-done
+                        （用 --prd 创建的功能：clarify 只做确认 + 补缺口——导入的 prd.md 是用户的契约，永不重写；write-prd 走仅规范化模式）
   implement-task     -> developer：implement-task skill；harness task-done <f> <task> --sha <sha>
   replan             -> planner：回答 RS-n 建议；harness replan-done <f>
   remediate          -> developer：fix-from-report skill；harness remediate-done <f> --sha <sha>

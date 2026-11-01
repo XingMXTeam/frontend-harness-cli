@@ -139,6 +139,16 @@ v1.0, not a launch-day claim.
 
 ## Changelog
 
+- v0.9.0 — PRD import. `harness new <f> --prd <file>` copies a finished
+  PRD verbatim into the feature dir, seeds `rubric.json` requirements
+  from its `REQ-n` numbering, and records `prd.source: "imported"` in
+  state. The kernel checks the numbering contract only (extract ids,
+  report gaps, never renumber, never rewrite); clarify then shrinks to
+  confirm + fill-the-gaps (nextAction emits the shortened instruction,
+  the planner packet carries `prdSource`), `write-prd` gains a
+  normalize-only mode and `clarify-requirements` a gap-only mode. A PRD
+  with no numbering still imports and is flagged, so arrival format
+  never blocks the workflow.
 - v0.8.0 — the ui dimension gains pixel-level fidelity. With
   `inputs.visualResults` pointing at a comparison report in the exact
   shape `harness visual` writes ({ results: [{ name, status, ratio,

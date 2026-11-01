@@ -11,6 +11,17 @@
 
 不适用：`clarification/summary.md` 已写明 `confirmed-by-user: yes` 且 `open-questions: 0` 的功能（直接进入 `write-prd`）。
 
+## 导入 PRD 模式
+
+如果 `state.json` 标明 `prd.source: "imported"`，说明用户是带着成稿 PRD 来的——`prd.md` 已存在于功能目录中。访谈缩减为只补缺口：
+
+- 先读 `prd.md`。它已经回答的一律不重问，包括 11 个模块里它覆盖到的部分。
+- 只问：PRD 没定的决策、PRD 内部的矛盾、以及 PRD 对品质期待（第 11 模块）没有任何可核对表述时的品质问题。
+- 若导入时内核报告了编号缺口，planner 在 `prd.md` **原地**补上缺失的 `REQ-n` 编号——永不改写用户措辞，永不重编已有编号。
+- 导入的 `prd.md` 是输入、不是草稿：「确认前不得创建正式文件」约束的是 planner 自己著述的文件，这份是用户写的。
+- 本模式下 `summary.md` 的职责是确认这份导入的 PRD：引用该文件、列出补掉的缺口，结尾仍是 `confirmed-by-user` / `open-questions: 0` 两行。
+- 下一个 skill 仍是 `write-prd`——走它的仅规范化模式。
+
 ## 草稿区与正式文件
 
 用户确认前，**只能**写 `.harness/tasks/<feature>/clarification/` 下的：
@@ -73,6 +84,6 @@ open-questions: 0
 
 ## 完成标准
 
-- 11 个模块全部覆盖；技术栈决定明确。
+- 11 个模块全部覆盖（导入模式下：由 PRD 覆盖或以缺口形式关闭）；技术栈决定明确。
 - `summary.md` 带用户原话的 `confirmed-by-user: yes` 和 `open-questions: 0`。
 - 还没有任何正式文件。下一个 skill：`write-prd`。

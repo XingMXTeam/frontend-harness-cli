@@ -8,7 +8,7 @@
  * do the planning / coding / judging through the packets `harness next` emits.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, chmodSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, chmodSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +29,7 @@ import { checkScope } from '../src/gate/scope.js';
 import { readPreviousReport, appendHistory, computeTrend } from '../src/gate/history.js';
 import { scoreSkillEval } from '../src/skills-eval.js';
 import { runLoop, AGENT_TEMPLATES, makeKernelExec, makeAgentExec, buildPacket } from '../src/run.js';
+import { analyzePrd } from '../src/prd.js';
 
 const TEMPLATES = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'templates');
 const DOCS_SRC = path.join(TEMPLATES, '..', 'docs'); // repo docs/ is the single source; init copies it to .harness/docs/
@@ -259,26 +260,56 @@ function cmdInit() {
 // ─── new ─────────────────────────────────────────────────────────────────────
 function cmdNew() {
   const feature = process.argv[3];
-  if (!feature) fail('Usage: harness new <feature> [--title "..."]');
+  if (!feature) fail('Usage: harness new <feature> [--title "..."] [--prd <file>]');
   loadConfig(root);
   const dir = featureDir(root, feature);
   if (existsSync(path.join(dir, 'state.json'))) fail(`Feature "${feature}" already exists. See: harness status ${feature}`);
+
+  // Optional PRD import: the user arrives with a finished PRD document.
+  // It is copied verbatim; the kernel checks only the structural contract
+  // downstream machinery depends on (REQ-n numbering, no gaps) and seeds
+  // rubric.requirements from what it finds. Clarify then shrinks to
+  // "confirm + fill the gaps" instead of a full interview (see nextAction).
+  let prdImport = null;
+  const prdArg = arg('--prd', null);
+  if (prdArg) {
+    const src = path.resolve(root, prdArg);
+    if (!existsSync(src) || !statSync(src).isFile()) fail(`--prd file not found: ${prdArg}`);
+    const content = readFileSync(src, 'utf8');
+    if (!content.trim()) fail(`--prd file is empty: ${prdArg}`);
+    prdImport = { from: prdArg, content, analysis: analyzePrd(content) };
+  }
+
   mkdirSync(dir, { recursive: true });
   const config = loadConfig(root);
   const state = createState(feature, arg('--title', ''));
   state.macroCycle.max = config.budgets.maxMacroCycles;
+  if (prdImport) {
+    state.prd = {
+      source: 'imported',
+      from: prdImport.from,
+      importedAt: new Date().toISOString(),
+      requirements: prdImport.analysis.requirements.length,
+      numberingComplete: prdImport.analysis.numberingComplete,
+      missingNumbers: prdImport.analysis.missing,
+    };
+    record(state, { event: 'prd-imported', from: prdImport.from, requirements: state.prd.requirements, numberingComplete: state.prd.numberingComplete });
+  }
   saveState(root, state);
+  if (prdImport) writeFileSync(path.join(dir, 'prd.md'), prdImport.content);
 
+  const seedRequirements = prdImport && prdImport.analysis.requirements.length
+    ? prdImport.analysis.requirements.map((r) => ({ id: r.id, description: r.description || `See prd.md (${r.id})` }))
+    : [{ id: 'REQ-1', description: 'REPLACE: the first user-visible requirement, in one sentence.' }];
+  const firstReq = seedRequirements[0].id;
   const rubric = {
     version: 1,
     feature,
-    requirements: [
-      { id: 'REQ-1', description: 'REPLACE: the first user-visible requirement, in one sentence.' },
-    ],
+    requirements: seedRequirements,
     items: [
-      { id: 'RB-1', requirement: 'REQ-1', layer: 'L1-function', level: 'essential', kind: 'file', path: 'REPLACE-WITH-REAL-PATH', minBytes: 1, weight: 3 },
-      { id: 'RB-2', requirement: 'REQ-1', layer: 'L2-robustness', level: 'pitfall', kind: 'grep', path: 'REPLACE-WITH-REAL-PATH', pattern: 'TODO|FIXME|placeholder', expect: 'absent', weight: 1 },
-      { id: 'RB-3', requirement: 'REQ-1', layer: 'L4-quality', level: 'important', kind: 'judge', anchor: 'RL-1', evidence: `.harness/tasks/${feature}/evaluation/judge-rb-3.json`, weight: 2 },
+      { id: 'RB-1', requirement: firstReq, layer: 'L1-function', level: 'essential', kind: 'file', path: 'REPLACE-WITH-REAL-PATH', minBytes: 1, weight: 3 },
+      { id: 'RB-2', requirement: firstReq, layer: 'L2-robustness', level: 'pitfall', kind: 'grep', path: 'REPLACE-WITH-REAL-PATH', pattern: 'TODO|FIXME|placeholder', expect: 'absent', weight: 1 },
+      { id: 'RB-3', requirement: firstReq, layer: 'L4-quality', level: 'important', kind: 'judge', anchor: 'RL-1', evidence: `.harness/tasks/${feature}/evaluation/judge-rb-3.json`, weight: 2 },
     ],
   };
   writeFileSync(rubricPath(root, feature), `${JSON.stringify(rubric, null, 2)}\n`);
@@ -288,6 +319,17 @@ function cmdNew() {
     { id: 'TASK-1', title: 'REPLACE: first small, independently verifiable task', requirements: ['REQ-1'], checks: [] },
   ];
   writeFileSync(path.join(dir, 'tasks.json'), `${JSON.stringify(tasks, null, 2)}\n`);
+  if (prdImport) {
+    const a = prdImport.analysis;
+    const numbering = a.requirements.length === 0
+      ? 'no REQ-n numbering found — the planner adds it in place during clarify, preserving your wording'
+      : a.numberingComplete
+        ? `${a.requirements.length} requirement(s) numbered REQ-n with no gaps; rubric.requirements seeded from them`
+        : `${a.requirements.length} requirement(s) found but numbering has gaps (missing: ${a.missing.join(', ')}) — the planner completes the numbering in place during clarify`;
+    print({ ok: true, feature, dir: path.relative(root, dir), prd: state.prd },
+      `Created feature "${feature}" in ${path.relative(root, dir)}/\n- prd.md (imported verbatim from ${prdImport.from})\n- state.json (phase=clarify, prd.source=imported)\n- vision.md (scaffold — quality anchors the planner finalizes during clarification)\n- rubric.json (scaffold — the planner replaces it after clarification)\n- tasks.json (scaffold)\nPRD check: ${numbering}.\nNext: shortened clarify — confirm the imported PRD with the user and fill only its gaps, then finalize vision.md + rubric.json + tasks.json and run: harness clarify-done ${feature}`);
+    return;
+  }
   print({ ok: true, feature, dir: path.relative(root, dir) },
     `Created feature "${feature}" in ${path.relative(root, dir)}/\n- state.json (phase=clarify)\n- vision.md (scaffold — quality anchors the planner finalizes during clarification)\n- rubric.json (scaffold — the planner replaces it after clarification)\n- tasks.json (scaffold)\nNext: work the clarify step with the user, finalize vision.md + rubric.json + tasks.json, then: harness clarify-done ${feature}`);
 }
@@ -690,7 +732,11 @@ try {
 
 Usage:
   harness init [--stack node|nextjs|vue|react] [--host claude-code|codex|generic] [--force]
-  harness new <feature> [--title "..."]
+  harness new <feature> [--title "..."] [--prd <file>]
+                                        --prd imports an existing PRD verbatim as prd.md:
+                                        rubric requirements are seeded from its REQ-n numbering
+                                        (gaps reported, never silently renumbered) and clarify
+                                        shrinks to confirm + fill-the-gaps
   harness clarify-done <feature>        Lock clarification (rubric coverage gate)
   harness next <feature> [--json]       The next action, derived from state alone (resume)
   harness task-done <feature> <taskId> [--sha <commit>]

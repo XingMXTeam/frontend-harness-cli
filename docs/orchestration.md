@@ -87,6 +87,16 @@ Rules:
 - The project overview (`.harness/overview/`) is **read** by steps 1–4
   and **written** only by `sync-overview` (section 8).
 
+**Imported PRD variant.** `harness new <f> --prd <file>` copies a
+finished PRD verbatim into `prd.md`, seeds `rubric.json`'s requirements
+from its `REQ-n` numbering (gaps are reported at creation; the kernel
+checks numbering but never renumbers), and records `prd.source:
+"imported"` in state. Steps 1–2 then shrink: clarify asks only about
+what the PRD leaves open and confirms the document, and `write-prd`
+normalizes in place (completing numbering, flagging missing sections as
+questions) instead of authoring. Steps 3–7 and everything downstream
+are unchanged.
+
 ## 4. Information isolation
 
 Isolation is a property of the packet the kernel builds, not a request
