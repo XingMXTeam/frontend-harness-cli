@@ -237,6 +237,38 @@ vs date）扣 6，代码声明了契约里没有的字段扣 6。不给 spec 输
 照物路径：结构真编译、数据对契约、逻辑对计划覆盖、UI 比像素、e2e
 真跑测试。
 
+## 证据造不了假，规则会自己长（v0.11）
+
+**验证是项目资产。** `fh init` 按 package.json 脚本生成 `.harness/verify.json`，
+列出证明这个项目能用的检查（类型、lint、单测、e2e、构建）。`fh verify` 逐个执行，
+把每次运行写进 `.harness/verify/last.json`：命令、退出码、HEAD sha、时间、输出尾部和完整日志。
+项目真有什么检查，就往文件里加什么。
+
+内核只认这份记录：
+
+- rubric 条目 `{ "kind": "verify", "check": "e2e" }` 由内核自己跑；
+- judge 证据按 id 引用：`"verify": ["unit", "e2e"]`，每一项都必须**通过、在当前 HEAD、晚于最近一次改动**，否则记 0；
+- `evidence.requireVerify`（init 检测到检查时默认开启）：judge 给了大于 0 的分却没引用任何 verify 运行，算自述，记 0。
+
+**反复纠正变成强制规则。** 一再出现的否决不是运气差，是缺一条规则。`fh learn`
+读所有功能的所有评估报告，把失败归成错误类别，给每类提出能管住它的最强执行者：
+
+| 执行者 | 什么时候 | adopt 做什么 |
+|---|---|---|
+| `gate` | 某个命令 / verify 检查反复失败 | 加进 `gateCommands` |
+| `project-pitfall` | 同一个 grep / scan 在多个功能或多轮里失败 | 写进 `.harness/project-rules.json`，**所有**功能评估时都会否决 |
+| `deterministic` | 同一个 judge 条目反复失败 | （手动）改写成脚本检查 |
+| `per-task` | 已在闸门里，但总在最后才失败 | （手动）每次 `fh done` 前先跑 |
+| `standards` | 其他 | （手动）写进 `.harness/standards.md` |
+
+```bash
+fh learn                      # 规则 → 执行者对照表（.harness/learnings.json）
+fh learn adopt L-3f2a1c       # 只有编排者能执行；下一次评估起生效
+fh learn dismiss L-9b0e44 --reason "下个迭代改设计"
+```
+
+项目规则只能否决（`level: pitfall`），也不写进单个功能的 rubric，所以功能自己放松不了它。
+
 ## 诚实边界（v0.5）
 
 内核只做编排与测评，永不调用 LLM；`harness run` 驱动层把任务包派给

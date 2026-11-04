@@ -142,6 +142,8 @@ export function protocolBlock(bin = 'fh') {
   (clarify, task, remediation, replan) and rejects work that has not earned it.
 - Never edit \`.harness/tasks/*/state.json\` by hand, and never declare a feature done yourself:
   only a passing \`${bin} eval\` plus the delivery gate can set done.
+- "Tests pass" is evidence only as a recorded \`${bin} verify\` run; cite its ids, never describe a run.
+- After a feature is done, run \`${bin} learn\` and show the user any proposal; adopt only with their yes.
 - Ask the user only at the clarify confirmation and when the harness pauses.
 ${BLOCK_END}
 `;
@@ -189,6 +191,9 @@ Everyday (the feature is remembered; <feature> is optional):
   fh s                    Status of the current feature (fh s --all: every feature)
   fh use <name>           Switch the current feature
   fh run                  Drive the loop unattended with Claude Code / Codex
+
+  fh verify               Run the project's verification checks (the evidence judges cite)
+  fh learn                Repeated failures → rules the kernel enforces
 
 Also: p(acket)  r(eport)  g(ate)  c(apture)  v(isual)  scan  doctor  skills
 Every command keeps its long name (harness next <feature>, task-done, …).

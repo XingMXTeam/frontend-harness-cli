@@ -110,6 +110,49 @@ Set up frontend-harness-cli in this project and use it for all feature work from
    and drive it to done. Ask me only at the clarify confirmation and when the harness pauses.
 ```
 
+## Evidence you can't fake, rules that learn (v0.11)
+
+**Verification is a project asset.** `fh init` writes `.harness/verify.json`
+from the repo's scripts — the checks that prove this project works
+(typecheck, lint, unit, e2e, build). `fh verify` runs them and records each
+run in `.harness/verify/last.json`: command, exit code, HEAD sha, time, output
+tail, full log. Edit the file to add what your project really has.
+
+```bash
+fh verify                 # all checks; exit 1 if any fails
+fh verify --only unit,e2e
+```
+
+That record is the only verify evidence the kernel accepts:
+
+- a rubric item `{ "kind": "verify", "check": "e2e" }` runs the check itself;
+- judge evidence cites runs by id — `"verify": ["unit", "e2e"]` — and scores 0
+  unless each one **passed, at the current HEAD, after the latest work**;
+- `evidence.requireVerify` (on by default when `init` finds checks): a judge
+  score above 0 that cites no verify run is a self-report and scores 0.
+
+**Repeated corrections become enforced rules.** A veto that keeps coming back
+is a missing rule. `fh learn` reads every evaluation of every feature, groups
+the failures into mistake classes, and proposes the strongest enforcer that
+can hold each one:
+
+| enforcer | when | adopt does |
+|---|---|---|
+| `gate` | a command / verify check keeps failing | adds it to `gateCommands` |
+| `project-pitfall` | the same grep / scan fails across features or cycles | adds a veto item to `.harness/project-rules.json`, merged into **every** feature's evaluation |
+| `deterministic` | the same judge item keeps failing | (manual) rewrite it as a script check |
+| `per-task` | already in the gate, still failing late | (manual) run it before each `fh done` |
+| `standards` | anything else | (manual) write it into `.harness/standards.md` |
+
+```bash
+fh learn                      # the rule → enforcer table (.harness/learnings.json)
+fh learn adopt L-3f2a1c       # orchestrator only; enforced from the next eval
+fh learn dismiss L-9b0e44 --reason "design changes next sprint"
+```
+
+Project rules are veto-only (`level: pitfall`) and never written into a
+feature's rubric, so a feature cannot loosen them.
+
 ## Full command reference
 
 ```bash
@@ -121,6 +164,8 @@ harness packet checkout                      # the role-scoped input for the age
 harness task-done checkout TASK-1 --sha <commit>
 harness capture checkout                     # evaluator: Playwright screenshots of pages.json
 harness eval checkout                        # rubric evaluation; routes the loop itself
+harness verify [--only unit,e2e]             # project checks, recorded as the evidence judges cite
+harness learn [adopt|dismiss <L-id>]         # repeated failures → gate / project-wide veto
 harness report checkout
 ```
 
