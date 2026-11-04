@@ -51,49 +51,77 @@ clarify ──(user confirms; rubric coverage gate)──▶ implement          
  delivery gate ──▶ done          budget exhausted at any point ──▶ paused (human decides)
 ```
 
-## Start with one prompt
+## 60-second start (v0.10)
 
-You don't have to install or learn the CLI yourself. Paste this prompt into
-Claude Code, Codex, or any agent runtime opened in your project — the agent
-clones the CLI, initializes your repo, and works under the harness protocol
-from then on. You stay in the loop at exactly two points: confirming the
-plan, and whenever the harness pauses.
+```bash
+npm i -g github:XingMXTeam/frontend-harness-cli   # installs `fh` (and the long name `harness`)
+cd your-app
+fh init          # stack, host and delivery gate detected from package.json; wires Claude Code / AGENTS.md
+fh new checkout  # or: fh new checkout --prd ./checkout-prd.md — becomes the current feature
+fh               # "what now?" — prints the next action for the current feature
+fh done          # "I finished this step" — routed by phase, see below
+fh e             # evaluate (rubric + vetoes); routes the loop
+```
+
+Five commands cover a whole feature. `<feature>` is optional everywhere: `fh new`
+remembers it (`fh use <name>` switches, `fh s --all` lists every feature).
+
+`fh done` reads state and records the right thing — never a guess:
+
+| phase now | `fh done` runs | and checks |
+|---|---|---|
+| clarify | `clarify-done` | every requirement has an essential rubric item |
+| implement-task | `task-done <next task>` | task checks pass; **HEAD is a new commit** (auto `--sha`) |
+| remediate | `remediate-done` | HEAD is a new commit |
+| replan | `replan-done` | every suggestion decided; rubric only tightens |
+| evaluate / confirm | `eval` | vetoes, pass score, stable passes, delivery gate |
+
+`fh done` refuses to record a step at a commit that was already recorded or that
+predates the feature — so "commit precisely, then mark done" is enforced instead of
+remembered. Pass `--sha <commit>` to pick one yourself.
+
+What `fh init` writes into a real repo:
+
+- `harness.config.json` — stack (next/vue/react/node from your deps) and `gateCommands`
+  taken from your own `typecheck` / `lint` / `test` / `build` scripts, with your package manager (npm / pnpm / yarn / bun)
+- `.harness/` — standards pack, docs, feature state (commit it; it is the audit trail)
+- Claude Code: `.claude/agents/{planner,developer,evaluator}.md`, the skills pack, the
+  SessionStart hook **registered in `.claude/settings.json`**, and a short protocol block in `CLAUDE.md`
+- Codex / other hosts: `.harness/agents/*`, `.harness/protocol.md` and the same block in `AGENTS.md`
+
+The block sits between `<!-- frontend-harness:start/end -->` markers: re-running `init` refreshes it
+and never touches the rest of your file. `--no-wire` skips CLAUDE.md / AGENTS.md / settings.json.
+
+Short aliases: `n` next · `s` status · `e` eval · `p` packet · `r` report · `g` gate · `c` capture · `v` visual.
+Every long command (`harness task-done <feature> <task> --sha …`) still works, so agents and scripts written
+for v0.9 keep running.
+
+### Or start with one prompt
+
+Paste into Claude Code, Codex, or any agent runtime opened in your project:
 
 ```text
 Set up frontend-harness-cli in this project and use it for all feature work from now on.
-
-1. Get the CLI: if a `harness` command is not available, run
-   git clone https://github.com/XingMXTeam/frontend-harness-cli.git ~/.frontend-harness-cli
-   and use `node ~/.frontend-harness-cli/bin/harness.js` wherever the steps below say `harness`.
-2. Initialize this repo (do not overwrite files that already exist):
-   harness init --stack <pick what this repo uses: nextjs | react | vue | node> --host <claude-code if you are Claude Code, codex if you are Codex, otherwise generic>
-3. Follow the harness protocol from now on:
-   - Your first action for any feature work is `harness next <feature>`; do exactly the action it returns.
-   - Never edit .harness/tasks/*/state.json by hand — every state change goes through a harness command.
-   - Never declare a feature done yourself; only a passing `harness eval` plus the delivery gate can set done.
-4. Ask me which feature to start. Create it with `harness new <feature>` — or `harness new <feature> --prd <file>` if I give you a PRD document — then drive it through clarify -> implement -> evaluate -> verify -> done. Ask me only at the clarify confirmation, and again if the harness pauses.
+1. If `fh` is not available, run: npm i -g github:XingMXTeam/frontend-harness-cli
+2. Run `fh init` (it detects the stack and host; do not overwrite existing files).
+3. From now on: run `fh` for the next action and do exactly that; run `fh done` when a step is finished;
+   never edit .harness state by hand; never declare a feature done yourself.
+4. Ask me which feature to start, create it with `fh new <name>` (or `--prd <file>` if I give you a PRD),
+   and drive it to done. Ask me only at the clarify confirmation and when the harness pauses.
 ```
 
-Manual setup instead? See Quick start below.
-
-## Quick start
+## Full command reference
 
 ```bash
-node bin/harness.js init --stack react --host claude-code  # or node/nextjs/vue, codex/generic
-node bin/harness.js new checkout --title "Checkout flow"
-# already have a finished PRD? Import it instead — copied verbatim, rubric
-# requirements seeded from its REQ-n numbering (gaps reported, never renumbered),
-# and clarify shrinks to confirm + fill-the-gaps:
-#   node bin/harness.js new checkout --prd ./checkout-prd.md
-# planner: clarify with the user, then the write-* chain writes prd.md, vision.md,
-# tech-design.md + pages.json, tasks.json, rubric.json + e2e-cases.json
-node bin/harness.js clarify-done checkout    # coverage gate: every requirement needs an essential check
-node bin/harness.js next checkout            # the only question the orchestrator ever needs to ask
-node bin/harness.js packet checkout          # the role-scoped input for the agent that does it
-node bin/harness.js task-done checkout TASK-1 --sha <commit>
-node bin/harness.js capture checkout         # evaluator: Playwright screenshots of pages.json
-node bin/harness.js eval checkout            # rubric evaluation; routes the loop itself
-node bin/harness.js report checkout
+harness init [--stack node|nextjs|vue|react] [--host claude-code|codex|generic] [--force] [--no-wire]
+harness new checkout --title "Checkout flow" [--prd ./checkout-prd.md]
+harness clarify-done checkout                # coverage gate: every requirement needs an essential check
+harness next checkout                        # the only question the orchestrator ever needs to ask
+harness packet checkout                      # the role-scoped input for the agent that does it
+harness task-done checkout TASK-1 --sha <commit>
+harness capture checkout                     # evaluator: Playwright screenshots of pages.json
+harness eval checkout                        # rubric evaluation; routes the loop itself
+harness report checkout
 ```
 
 Run the self-contained demos:

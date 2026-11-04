@@ -30,6 +30,7 @@ import { readPreviousReport, appendHistory, computeTrend } from '../src/gate/his
 import { scoreSkillEval } from '../src/skills-eval.js';
 import { runLoop, AGENT_TEMPLATES, makeKernelExec, makeAgentExec, buildPacket } from '../src/run.js';
 import { analyzePrd } from '../src/prd.js';
+import { normalizeArgv, getCurrent, setCurrent, listFeatures, detectStack, detectHost, detectGateCommands, protocolBlock, upsertBlock, registerClaudeHook, SHORT_HELP } from '../src/ux.js';
 
 const TEMPLATES = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'templates');
 const DOCS_SRC = path.join(TEMPLATES, '..', 'docs'); // repo docs/ is the single source; init copies it to .harness/docs/
@@ -191,8 +192,10 @@ function cmdScope() {
 
 // ─── init ────────────────────────────────────────────────────────────────────
 function cmdInit() {
-  const stack = arg('--stack', 'node');
-  const host = arg('--host', 'claude-code');
+  const detected = { stack: detectStack(root), host: detectHost(root) };
+  const stack = arg('--stack', detected.stack.stack);
+  const host = arg('--host', detected.host.host);
+  const why = [arg('--stack') ? null : `stack=${stack} (${detected.stack.why})`, arg('--host') ? null : `host=${host} (${detected.host.why})`].filter(Boolean);
   const force = has('--force');
   if (!['node', 'nextjs', 'vue', 'react'].includes(stack)) fail(`Unknown stack "${stack}" (node|nextjs|vue|react).`);
   if (!['claude-code', 'codex', 'generic'].includes(host)) fail(`Unknown host "${host}" (claude-code|codex|generic).`);
@@ -213,6 +216,9 @@ function cmdInit() {
   if (stack === 'nextjs') config.gateCommands = ['npm run gate'];
   if (stack === 'vue') config.gateCommands = ['npm test'];
   if (stack === 'react') config.gateCommands = ['npm test'];
+  const gateDetected = detectGateCommands(root);
+  if (gateDetected.length) { config.gateCommands = gateDetected; why.push(`gate=${gateDetected.join(' && ')} (from package.json scripts)`); }
+  else if (existsSync(path.join(root, 'package.json'))) { config.gateCommands = []; why.push('gate=none (no lint/test/build script in package.json — add one, then set gateCommands)'); }
   write(configPath(root), `${JSON.stringify(config, null, 2)}\n`);
 
   mkdirSync(harnessDir(root), { recursive: true });
@@ -240,12 +246,22 @@ function cmdInit() {
     const hookDst = path.join(root, '.claude', 'hooks', 'session-start.sh');
     if (existsSync(hookDst) && !force) skipped.push(path.relative(root, hookDst));
     else { mkdirSync(path.dirname(hookDst), { recursive: true }); copyFileSync(path.join(TEMPLATES, 'claude-code', 'session-start.sh'), hookDst); chmodSync(hookDst, 0o755); made.push(path.relative(root, hookDst)); }
+    if (!has('--no-wire')) {
+      const hook = registerClaudeHook(root);
+      if (hook === 'registered') made.push('.claude/settings.json (SessionStart hook)');
+      const md = upsertBlock(path.join(root, 'CLAUDE.md'), protocolBlock());
+      if (md !== 'unchanged') made.push(`CLAUDE.md (harness block ${md})`);
+    }
     const pack = installSkills(path.join(root, '.claude', 'skills'), { force });
     made.push(...pack.installed.map((n) => `.claude/skills/${n}`));
     skipped.push(...pack.skipped.map((n) => `.claude/skills/${n}`));
     write(path.join(harnessDir(root), 'host-setup.md'),
       '# Claude Code host setup\n\nRegister the session-start hook in `.claude/settings.json`:\n\n```json\n{\n  "hooks": {\n    "SessionStart": [{ "hooks": [{ "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh" }] }]\n  }\n}\n```\n\nThe `harness` skill is already installed at `.claude/skills/harness/SKILL.md`, the three role agents (planner, developer, evaluator) at `.claude/agents/`, and the bundled skills pack (the authoring chain clarify-requirements → write-acceptance-criteria, implement-task, e2e-testing, …) alongside them. Manage the pack with `harness skills list|install`.\n\nThe main session is the orchestrator: it runs `harness next`, dispatches the role agent the action names (`harness packet <feature>` prints that agent\'s input), and runs the kernel commands. It does not do role work itself.\n');
   } else {
+    if (!has('--no-wire')) {
+      const md = upsertBlock(path.join(root, 'AGENTS.md'), protocolBlock());
+      if (md !== 'unchanged') made.push(`AGENTS.md (harness block ${md})`);
+    }
     // Instruction-level role definitions: same text, no host front matter.
     for (const role of ROLES) write(path.join(harnessDir(root), 'agents', `${role}.md`), `${roleInstructions(role)}\n`);
     write(path.join(harnessDir(root), 'protocol.md'), `${stripFrontMatter(readFileSync(path.join(TEMPLATES, 'claude-code', 'SKILL.md'), 'utf8')).trim()}\n`);
@@ -253,8 +269,8 @@ function cmdInit() {
       `# Host setup (${host})\n\nAdd this to your agent instructions file (AGENTS.md or equivalent):\n\n> At the start of every session run \`harness next <feature>\` and follow the returned action. The rules are in \`.harness/protocol.md\`. Each action belongs to one role — clarify/replan: planner, implement-task/remediate: developer, evaluate/confirm-evaluation: evaluator — whose instructions are in \`.harness/agents/<role>.md\`. When your host supports separate sessions or sub-agents, run each role in its own context and give it only \`harness packet <feature>\`. Never stop at a summary: after every verdict, run the next action.\n\nThe authoring and evaluation skills are installable with \`harness skills install --dir <your skills dir>\`; their text is plain Markdown any host can read.\n`);
   }
 
-  print({ ok: true, stack, host, created: made, skipped },
-    `Initialized harness (stack=${stack}, host=${host}).\nCreated: ${made.join(', ') || 'nothing'}${skipped.length ? `\nSkipped (already exist, use --force to overwrite): ${skipped.join(', ')}` : ''}\nNext: harness new <feature>`);
+  print({ ok: true, stack, host, gateCommands: config.gateCommands, detected: why, created: made, skipped },
+    `Initialized harness (stack=${stack}, host=${host}).${why.length ? `\nDetected: ${why.join('; ')}` : ''}\nCreated: ${made.length} file(s)${skipped.length ? `, skipped ${skipped.length} existing (use --force to overwrite)` : ''}${has('--verbose') ? `\n  ${made.join('\n  ')}` : ''}\nNext: fh new <feature>   (or: fh new <feature> --prd ./prd.md)`);
 }
 
 // ─── new ─────────────────────────────────────────────────────────────────────
@@ -296,6 +312,7 @@ function cmdNew() {
     record(state, { event: 'prd-imported', from: prdImport.from, requirements: state.prd.requirements, numberingComplete: state.prd.numberingComplete });
   }
   saveState(root, state);
+  setCurrent(root, feature);
   if (prdImport) writeFileSync(path.join(dir, 'prd.md'), prdImport.content);
 
   const seedRequirements = prdImport && prdImport.analysis.requirements.length
@@ -347,6 +364,8 @@ async function cmdClarifyDone() {
     state.tasks = tasks.map((t) => ({ id: t.id, title: t.title, requirements: t.requirements ?? [], status: 'pending', attempts: 0, commitSha: null }));
     state.clarificationComplete = true;
     state.phase = 'implement';
+    // Baseline commit: `fh done` refuses to record a step at a commit that predates it.
+    if (isGitRepo(root)) state.baseSha = headSha(root);
     // Lock the contract: later replans may tighten it, loosening needs a human.
     state.rubricBaseline = rubricLevels(loadRubric(root, feature));
     state.rubricHash = rubricFingerprint(root, feature);
@@ -354,6 +373,67 @@ async function cmdClarifyDone() {
     saveState(root, state);
     print({ ok: true, feature, tasks: state.tasks.length }, `Clarification locked for "${feature}": rubric coverage OK, ${state.tasks.length} task(s) queued. Phase -> implement.`);
   });
+}
+
+// ─── use / done (ergonomics; routing only, the kernel still decides) ────────
+function cmdUse() {
+  const feature = process.argv[3];
+  const all = listFeatures(root);
+  if (!feature) { const cur = getCurrent(root); print({ current: cur, features: all }, all.length ? all.map((f) => `${f === cur ? '* ' : '  '}${f}`).join('\n') : 'No features yet. Run: fh new <feature>'); return; }
+  if (!all.includes(feature)) fail(`No feature "${feature}". Known: ${all.join(', ') || 'none'}`);
+  setCurrent(root, feature);
+  print({ ok: true, current: feature }, `Current feature -> ${feature}`);
+}
+
+/** The commit a task/remediation is recorded at when --sha is omitted: HEAD, but only if it is new. */
+function defaultSha(state, config) {
+  if (arg('--sha') || !isGitRepo(root) || !config.git.requireCommitPerTask) return null;
+  const r = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' });
+  const head = r.status === 0 ? r.stdout.trim().toLowerCase() : null;
+  if (!head) return null;
+  const seen = [
+    ...state.tasks.map((t) => t.commitSha),
+    ...(state.history ?? []).map((h) => h.commitSha),
+    state.baseSha,
+  ].filter(Boolean).map((x) => String(x).toLowerCase());
+  if (seen.some((s) => head.startsWith(s) || s.startsWith(head))) fail(`HEAD (${head.slice(0, 7)}) is already recorded for an earlier step, or predates this feature. Commit this step's changes first, or pass --sha <commit>.`);
+  return head.slice(0, 12);
+}
+
+async function cmdDone() {
+  const feature = process.argv[3];
+  if (!feature) fail('No current feature. Run: fh new <feature>  or  fh use <feature>');
+  const config = loadConfig(root);
+  const state = loadState(root, feature);
+  const action = nextAction(root, state, config);
+  const rest = process.argv.slice(4);
+  const route = (cmd, extra = []) => { process.argv = [process.argv[0], process.argv[1], cmd, feature, ...extra, ...rest]; return cmd; };
+  switch (action.action) {
+    case 'clarify':
+    case 'clarify-done':
+      route('clarify-done'); await cmdClarifyDone(); return;
+    case 'implement-task': {
+      const explicit = rest[0] && !rest[0].startsWith('-') ? rest.shift() : null;
+      const taskId = explicit ?? action.task?.id;
+      const sha = defaultSha(state, config);
+      route('task-done', [taskId, ...(sha ? ['--sha', sha] : [])]); await cmdTaskDone(); return;
+    }
+    case 'remediate': {
+      const sha = defaultSha(state, config);
+      route('remediate-done', sha ? ['--sha', sha] : []); await cmdRemediateDone(); return;
+    }
+    case 'replan':
+      route('replan-done'); await cmdReplanDone(); return;
+    case 'evaluate':
+    case 'confirm-evaluation':
+      route('eval'); await cmdEval(); return;
+    case 'human-decision':
+      fail(`Paused: ${action.reason}. A human reviews the last report, then runs: fh resume`);
+    case 'none':
+      print({ ok: true, feature, phase: 'done' }, `"${feature}" is already done. Report: fh r`); return;
+    default:
+      fail(`Nothing to mark done in phase ${action.phase} (${action.action}). See: fh next`);
+  }
 }
 
 // ─── next / status ───────────────────────────────────────────────────────────
@@ -366,7 +446,8 @@ function cmdNext() {
 }
 
 function cmdStatus() {
-  const feature = process.argv[3];
+  const positional = process.argv[3] && !process.argv[3].startsWith('-') ? process.argv[3] : null;
+  const feature = positional ?? (has('--all') ? null : getCurrent(root));
   if (feature) {
     const state = loadState(root, feature);
     const done = state.tasks.filter((t) => t.status === 'done').length;
@@ -413,7 +494,7 @@ async function cmdTaskDone() {
     record(state, { event: 'task-done', task: taskId, commitSha: task.commitSha });
     if (state.remediation?.length) state.remediation = state.remediation.filter((i) => i !== taskId);
     saveState(root, state);
-    print({ ok: true, feature, task: taskId, commitSha: task.commitSha }, `Task ${taskId} recorded done${sha ? ` @ ${sha}` : ''}. Next: harness next ${feature}`);
+    print({ ok: true, feature, task: taskId, commitSha: task.commitSha }, `Task ${taskId} recorded done${sha ? ` @ ${sha}` : ''}. Next: fh  (harness next ${feature})`);
   });
 }
 
@@ -533,7 +614,7 @@ async function cmdReplanDone() {
     record(state, { event: 'replanned', accepted: accepted.map((a) => a.id), rejected: pending.filter((p) => !accepted.includes(p)).map((p) => p.id), newTasks: newTasks.map((t) => t.id), loosenedWithHuman: loosened.length ? loosened : undefined });
     saveState(root, state);
     print({ ok: true, feature, accepted: accepted.map((a) => a.id), newTasks: newTasks.map((t) => t.id) },
-      `Replan recorded for "${feature}": ${accepted.length} accepted, ${pending.length - accepted.length} rejected, ${newTasks.length} new task(s). Rubric coverage OK. Next: harness next ${feature}`);
+      `Replan recorded for "${feature}": ${accepted.length} accepted, ${pending.length - accepted.length} rejected, ${newTasks.length} new task(s). Rubric coverage OK. Next: fh  (harness next ${feature})`);
   });
 }
 
@@ -658,7 +739,7 @@ async function cmdResume() {
     delete state.pauseReason;
     record(state, { event: 'resumed-by-human' });
     saveState(root, state);
-    print({ ok: true, feature }, `Feature "${feature}" resumed with a fresh macro-cycle budget. Next: harness next ${feature}`);
+    print({ ok: true, feature }, `Feature "${feature}" resumed with a fresh macro-cycle budget. Next: fh  (harness next ${feature})`);
   });
 }
 
@@ -702,9 +783,17 @@ function cmdDoctor() {
 }
 
 // ─── main ────────────────────────────────────────────────────────────────────
-const cmd = process.argv[2];
+const norm = normalizeArgv(process.argv, root);
+process.argv = norm.argv;
+let cmd = norm.cmd;
+// Bare `fh` inside an initialized repo with a current feature = `fh next`.
+if (!cmd && existsSync(configPath(root)) && getCurrent(root)) { cmd = 'next'; process.argv.splice(2, 0, 'next', getCurrent(root)); }
 try {
   switch (cmd) {
+    case 'use': cmdUse(); break;
+    case 'done': await cmdDone(); break;
+    case 'go': process.argv.splice(2, 1, 'next'); { const n = normalizeArgv(process.argv, root); process.argv = n.argv; } cmdNext(); break;
+    case 'version': console.log(JSON.parse(readFileSync(path.join(TEMPLATES, '..', 'package.json'), 'utf8')).version); break;
     case 'init': cmdInit(); break;
     case 'new': cmdNew(); break;
     case 'clarify-done': await cmdClarifyDone(); break;
@@ -727,7 +816,12 @@ try {
     case 'capture': await cmdCapture(); break;
     case 'visual': await cmdVisual(); break;
     case 'routes': print(VERDICT_ROUTES, VERDICT_ROUTES.map((r) => `${r.when}\n    -> phase ${r.phase}, next ${r.next} (${r.who})`).join('\n')); break;
+    case 'help':
+      if (!has('--all')) { console.log(SHORT_HELP); break; }
+    // falls through
     default:
+      if (!cmd) { console.log(SHORT_HELP); break; }
+      if (cmd !== 'help') console.error(`Unknown command "${cmd}".\n`);
       console.log(`harness — frontend Harness kernel for long-running AI coding
 
 Usage:
@@ -773,7 +867,7 @@ Usage:
                                         Drive the loop unattended: kernel steps run directly,
                                         agent steps dispatch to the host agent CLI headless.
                                         Stops on done / paused / needs-human / stall / budget.`);
-      if (cmd && cmd !== '--help' && cmd !== '-h') process.exit(1);
+      if (cmd !== 'help') process.exit(1);
   }
 } catch (e) {
   console.error(`harness: ${e.message}`);

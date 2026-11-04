@@ -46,6 +46,26 @@ Codex…）里负责规划、写码和评判，CLI 负责状态、覆盖门禁�
   都附中文阅读版：与生效英文版同目录的 `SKILL.zh-CN.md`；宿主加载的
   始终是英文 `SKILL.md`，中文版只供阅读。
 
+## 60 秒上手（v0.10）
+
+```bash
+npm i -g github:XingMXTeam/frontend-harness-cli   # 安装 `fh`（长名 `harness` 仍可用）
+cd your-app
+fh init          # 从 package.json 自动识别栈、宿主和交付门禁；自动接好 Claude Code / AGENTS.md
+fh new checkout  # 或 fh new checkout --prd ./prd.md；自动成为当前 feature
+fh               # “现在该干嘛？”——打印当前 feature 的下一步
+fh done          # “这一步做完了”——按阶段自动路由
+fh e             # 评测（rubric + 否决），自动路由循环
+```
+
+五个命令走完一个 feature，`<feature>` 处处可省（`fh use <名>` 切换，`fh s --all` 看全部）。
+
+`fh done` 按状态记录，不靠猜：clarify → `clarify-done`（覆盖门禁）；implement → `task-done <下一个任务>`（任务检查通过，且 **HEAD 必须是新提交**，自动带 `--sha`）；remediate → `remediate-done`；replan → `replan-done`（rubric 只能收紧）；evaluate → `eval`。已记录过或早于本 feature 的提交会被拒绝，“先精确提交再标完成”从靠自觉变成靠校验。
+
+`fh init` 会把 gateCommands 设成你项目自己的 `typecheck / lint / test / build` 脚本（识别 npm / pnpm / yarn / bun），在 `.claude/settings.json` 注册 SessionStart hook，并在 `CLAUDE.md`（或 `AGENTS.md`）里写一段带标记的协议说明；重复执行只刷新这一段，不动你其他内容，`--no-wire` 可跳过。
+
+短别名：`n` next · `s` status · `e` eval · `p` packet · `r` report · `g` gate · `c` capture · `v` visual。v0.9 的长命令全部保留。
+
 ## 快速开始
 
 ```bash
