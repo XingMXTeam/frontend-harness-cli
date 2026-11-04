@@ -40,19 +40,25 @@ and `.harness/docs/evaluation-heuristics.md`.
 2. `harness capture <feature>` — real screenshots of every page in
    `pages.json`. A failed capture is a finding, not something to retry
    with `--allow-fallback`.
-3. Run the E2E cases (skill `e2e-testing`) and, for API-backed tasks, the
+3. `fh verify` — the project's own checks (`.harness/verify.json`). The
+   kernel records each run (exit code, HEAD sha, time); cite the passing
+   ids in your evidence as `"verify": [...]`. Your own description of a
+   test run is not evidence; the recorded run is. A failing check is a
+   finding.
+4. Run the E2E cases (skill `e2e-testing`) and, for API-backed tasks, the
    API checks (skill `api-testing`). Then at least three exploratory
    probes from the heuristics doc.
-4. Open every screenshot and look at it. For each page: hierarchy,
+5. Open every screenshot and look at it. For each page: hierarchy,
    color/contrast, spacing, alignment, overflow, states — measured where
    the heuristics doc gives a measurement.
-5. Score each judge item exactly 1, 0.5 or 0 and write its evidence file:
+6. Score each judge item exactly 1, 0.5 or 0 and write its evidence file:
 
 ```json
 {
   "score": 0.5,
   "note": "List matches REF-1 density, but titles over 60 chars clip at 1280px (H-UI-6.4).",
   "artifacts": [".harness/tasks/<f>/evidence/<run>/list.png"],
+  "verify": ["unit", "e2e"],
   "heuristics": ["H-UI-6.4"],
   "rubricRefinementSuggestions": [
     { "type": "refine", "item": "RB-7", "problem": "no width stated", "suggestion": "no clipped text at 375 and 1280 px" }
@@ -60,12 +66,12 @@ and `.harness/docs/evaluation-heuristics.md`.
 }
 ```
 
-6. Write the narrative report `evaluation/eval-<cycle>.md`: E2E case
+7. Write the narrative report `evaluation/eval-<cycle>.md`: E2E case
    matrix (case id → PASS/FAIL/SKIP with evidence; a SKIP needs a
    reason), per-layer scores, comparison against each REF-n, exploratory
    findings, and a findings table
    (`heuristic | artifact | severity | problem | recommendation | rubric id`).
-7. File refinement suggestions whenever an item was hard to score, a
+8. File refinement suggestions whenever an item was hard to score, a
    defect had no item, or a level felt wrong. Suggestions are how the
    rubric gets better; none on a run that found new defects is a smell.
 

@@ -30,6 +30,8 @@ import { readPreviousReport, appendHistory, computeTrend } from '../src/gate/his
 import { scoreSkillEval } from '../src/skills-eval.js';
 import { runLoop, AGENT_TEMPLATES, makeKernelExec, makeAgentExec, buildPacket } from '../src/run.js';
 import { analyzePrd } from '../src/prd.js';
+import { detectVerifyChecks, loadVerify, runVerify, verifyFile } from '../src/verify.js';
+import { mine, saveLearnings, loadLearnings, adopt, dismiss, formatLearnings, loadProjectRules, projectRulesFile } from '../src/learn.js';
 import { normalizeArgv, getCurrent, setCurrent, listFeatures, detectStack, detectHost, detectGateCommands, protocolBlock, upsertBlock, registerClaudeHook, SHORT_HELP } from '../src/ux.js';
 
 const TEMPLATES = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'templates');
@@ -219,7 +221,19 @@ function cmdInit() {
   const gateDetected = detectGateCommands(root);
   if (gateDetected.length) { config.gateCommands = gateDetected; why.push(`gate=${gateDetected.join(' && ')} (from package.json scripts)`); }
   else if (existsSync(path.join(root, 'package.json'))) { config.gateCommands = []; why.push('gate=none (no lint/test/build script in package.json — add one, then set gateCommands)'); }
+  // Verification as a project asset: the checks that prove this repo works.
+  const verifyChecks = detectVerifyChecks(root);
+  if (verifyChecks.length) {
+    // New projects get evidence-backed judging by default: a judge score
+    // above 0 must cite a passing `fh verify` run at the current HEAD.
+    config.evidence = { ...(config.evidence ?? {}), requireVerify: true };
+    why.push(`verify=${verifyChecks.map((c) => c.id).join(',')} (from package.json scripts)`);
+  }
   write(configPath(root), `${JSON.stringify(config, null, 2)}\n`);
+  write(verifyFile(root), `${JSON.stringify({
+    $comment: 'Checks that prove this project works. `fh verify` runs them and records exit code, HEAD sha and output in .harness/verify/last.json; judge evidence cites them by id ("verify": ["unit"]), and rubric items can run one with {"kind":"verify","check":"<id>"}. Add the checks your project really has (e2e, visual, api).',
+    checks: verifyChecks,
+  }, null, 2)}\n`);
 
   mkdirSync(harnessDir(root), { recursive: true });
   const standardsSrc = path.join(TEMPLATES, 'standards', `${stack}.md`);
@@ -517,6 +531,10 @@ async function cmdEval() {
       fail(`${state.pendingRefinements.length} rubric refinement suggestion(s) are unanswered. The planner replans first: harness next ${feature}`);
     }
     const rubric = loadRubric(root, feature);
+    // Project rules (adopted from `fh learn`) veto every feature, not just
+    // the one whose rubric named them.
+    const projectRules = loadProjectRules(root).filter((r) => !rubric.items.some((i) => i.id === r.id));
+    rubric.items.push(...projectRules);
     // Judge evidence must postdate the work it judges and the previous
     // evaluation — a confirmation pass cannot reuse the last pass's notes.
     const lastWork = [...state.history].reverse().find((h) => ['task-done', 'remediation-fixed', 'replanned'].includes(h.event));
@@ -777,9 +795,46 @@ function cmdDoctor() {
   try { const c = loadConfig(root); checks.push({ name: 'harness.config.json parses', ok: true, detail: `stack=${c.stack} host=${c.host}` }); checks.push({ name: 'gateCommands configured', ok: c.gateCommands.length > 0, detail: c.gateCommands.join(' ; ') || 'empty — harness gate will pass vacuously' }); }
   catch (e) { checks.push({ name: 'harness.config.json parses', ok: false, detail: e.message }); }
   checks.push({ name: 'git repo', ok: isGitRepo(root), detail: isGitRepo(root) ? `HEAD ${headSha(root)}` : 'not a git repo — per-task SHA checks are skipped' });
+  try {
+    const v = loadVerify(root);
+    checks.push({ name: '.harness/verify.json', ok: Boolean(v?.checks.length), detail: v ? (v.checks.map((c) => c.id).join(', ') || 'no checks — judge evidence has nothing to cite') : 'missing — fh init generates it' });
+  } catch (e) { checks.push({ name: '.harness/verify.json', ok: false, detail: e.message }); }
   checks.push({ name: '.harness/standards.md present', ok: existsSync(path.join(harnessDir(root), 'standards.md')), detail: '' });
   print(checks, checks.map((c) => `${c.ok ? '✅' : '❌'} ${c.name}${c.detail ? ` — ${c.detail}` : ''}`).join('\n'));
-  if (checks.some((c) => !c.ok && c.name !== 'gateCommands configured')) process.exit(1);
+  if (checks.some((c) => !c.ok && !['gateCommands configured', '.harness/verify.json'].includes(c.name))) process.exit(1);
+}
+
+// ─── verify / learn ──────────────────────────────────────────────────────────
+function cmdVerify() {
+  requireRole('verify', ['developer', 'evaluator']);
+  const config = loadConfig(root);
+  const only = arg('--only')?.split(',').map((s) => s.trim()).filter(Boolean) ?? null;
+  const res = runVerify(root, config.evaluation.commandTimeoutMs, only);
+  print(res, `${res.runs.map((r) => `${r.status === 'passed' ? '✅' : '❌'} ${r.id.padEnd(10)} ${r.command}  (${(r.durationMs / 1000).toFixed(1)}s${r.sha ? ` @ ${r.sha}` : ''})${r.status === 'passed' ? '' : `\n     ${r.tail.split('\n').join('\n     ')}\n     full log: ${r.log}`}`).join('\n')}\nRecorded in .harness/verify/last.json — cite passing ids in judge evidence as "verify": [${res.runs.filter((r) => r.status === 'passed').map((r) => `"${r.id}"`).join(', ')}].`);
+  if (!res.passed) process.exitCode = 1;
+}
+
+function cmdLearn() {
+  const sub = process.argv[3];
+  if (sub === 'adopt' || sub === 'dismiss') {
+    requireRole(`learn ${sub}`, []);
+    const id = process.argv[4];
+    if (!id) fail(`Usage: fh learn ${sub} <L-id>${sub === 'dismiss' ? ' --reason "…"' : ''}`);
+    if (sub === 'adopt') {
+      const r = adopt(root, id);
+      print(r, r.already ? `${id} is already adopted (${r.rule.adoptedAs}).` : `Adopted ${id} → ${r.rule.adoptedAs}. It is enforced from the next evaluation on.`);
+    } else {
+      const r = dismiss(root, id, arg('--reason'));
+      print(r, `Dismissed ${id}: ${r.reason}`);
+    }
+    return;
+  }
+  const config = loadConfig(root);
+  const min = Number(arg('--min', '2'));
+  if (!Number.isInteger(min) || min < 1) fail('--min must be a positive integer.');
+  const learnings = mine(root, config, { min });
+  saveLearnings(root, learnings);
+  print(learnings, formatLearnings(learnings));
 }
 
 // ─── main ────────────────────────────────────────────────────────────────────
@@ -806,6 +861,8 @@ try {
     case 'report': cmdReport(); break;
     case 'doctor': cmdDoctor(); break;
     case 'scan': cmdScan(); break;
+    case 'verify': cmdVerify(); break;
+    case 'learn': cmdLearn(); break;
     case 'skills': cmdSkills(); break;
     case 'verify-zone': cmdVerifyZone(); break;
     case 'scope': cmdScope(); break;
@@ -848,6 +905,12 @@ Usage:
                                         reported as no-baseline (exit 2), never as a pass
   harness eval <feature> [--json]       Run rubric evaluation (veto rules apply), route the loop
   harness gate                          Run configured delivery-gate commands, fail-fast
+  harness verify [--only a,b] [--json]  Run .harness/verify.json checks; records exit/sha/output in
+                                        .harness/verify/last.json — the only verify evidence judges may cite
+  harness learn [--min 2] [--json]      Mine every evaluation for repeated failures; propose the strongest
+                                        enforcer (gate > project pitfall > script > per-task > standards)
+  harness learn adopt <L-id>            Apply a proposal (gateCommands or .harness/project-rules.json)
+  harness learn dismiss <L-id> --reason "…"
   harness status [<feature>] [--json]
   harness resume <feature>              Human un-pause after a budget stop
   harness report <feature>              Markdown acceptance report

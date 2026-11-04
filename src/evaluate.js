@@ -5,6 +5,7 @@ import { featureDir } from './config.js';
 import { resolveFromRoot } from './git.js';
 import { runScan } from './scan.js';
 import { layerKey } from './rubric.js';
+import { loadVerify, runCheck, verifyEvidenceProblems } from './verify.js';
 export { DEFAULT_LAYER_WEIGHTS, layerKey } from './rubric.js';
 
 /**
@@ -32,6 +33,15 @@ export function runItem(root, item, timeoutMs, scanCache = new Map(), opts = {})
       const ok = r.status === 0;
       const tail = `${r.stdout ?? ''}${r.stderr ?? ''}`.trim().split('\n').slice(-3).join(' | ').slice(0, 300);
       return { score: ok ? 1 : 0, detail: `exit=${r.status}${tail ? ` ${tail}` : ''}` };
+    }
+    case 'verify': {
+      // The project's own verification check, run by the kernel. The run is
+      // recorded in .harness/verify/last.json like any `fh verify`.
+      const manifest = loadVerify(root);
+      const check = manifest?.checks.find((c) => c.id === item.check);
+      if (!check) return { score: 0, detail: `verify: no check "${item.check}" in .harness/verify.json` };
+      const run = runCheck(root, check, timeoutMs);
+      return { score: run.status === 'passed' ? 1 : 0, detail: `verify ${check.id}: \`${check.command}\` exit=${run.exitCode}${run.tail ? ` ${run.tail.split('\n').slice(-2).join(' | ')}` : ''}`.slice(0, 300) };
     }
     case 'file': {
       const p = resolveFromRoot(root, item.path);
@@ -72,6 +82,16 @@ export function runItem(root, item, timeoutMs, scanCache = new Map(), opts = {})
       const artifacts = Array.isArray(ev.artifacts) ? ev.artifacts : [];
       const missing = artifacts.filter((a) => !existsSync(resolveFromRoot(root, a)));
       if (missing.length) return { score: 0, detail: `judge evidence cites missing artifact(s): ${missing.join(', ')}` };
+      // Verify runs cited as evidence must be the kernel's own record: passed,
+      // at the current HEAD, after the latest work. With requireVerify a
+      // positive score that cites none is a self-report, not evidence.
+      const cited = Array.isArray(ev.verify) ? ev.verify : [];
+      if (cited.length) {
+        const problems = verifyEvidenceProblems(root, cited, opts);
+        if (problems.length) return { score: 0, detail: `judge evidence cites unusable verify run(s): ${problems.join('; ')}`.slice(0, 300) };
+      } else if (opts.requireVerify && s > 0) {
+        return { score: 0, detail: `judge evidence cites no verify run — evidence.requireVerify is on: run \`fh verify\` and list the check ids in "verify"` };
+      }
       // A red line declared "(check: screenshot)" is judged from pixels:
       // its judge item must cite at least one real PNG screenshot.
       const anchor = opts.vision?.get?.(item.anchor);
@@ -140,7 +160,7 @@ export function weightedScore(rubric, results) {
 export function evaluateRubric(root, rubric, config, opts = {}) {
   const timeoutMs = config.evaluation.commandTimeoutMs;
   const scanCache = new Map(); // one sensor run per target path, shared by all scan items
-  const itemOpts = { ...opts, minScreenshotBytes: opts.minScreenshotBytes ?? config.evidence?.minScreenshotBytes ?? 2048 };
+  const itemOpts = { ...opts, minScreenshotBytes: opts.minScreenshotBytes ?? config.evidence?.minScreenshotBytes ?? 2048, requireVerify: opts.requireVerify ?? Boolean(config.evidence?.requireVerify) };
   const results = rubric.items.map((item) => ({ item, ...runItem(root, item, timeoutMs, scanCache, itemOpts) }));
 
   const vetoed = [];

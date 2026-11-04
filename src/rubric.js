@@ -4,7 +4,7 @@ import { featureDir } from './config.js';
 import { ANCHOR_ID } from './vision.js';
 
 export const LEVELS = ['essential', 'important', 'optional', 'pitfall'];
-export const KINDS = ['command', 'file', 'grep', 'judge', 'scan'];
+export const KINDS = ['command', 'file', 'grep', 'judge', 'scan', 'verify'];
 export const SCAN_DIMENSIONS = ['structure', 'data', 'logic', 'ui', 'e2e'];
 
 export const LAYERS = ['L1', 'L2', 'L3', 'L4'];
@@ -65,6 +65,7 @@ export function validateRubric(rubric) {
       throw new Error(`Item ${it.id}: maps to unknown requirement "${it.requirement}".`);
     }
     if (it.kind === 'command' && !it.command) throw new Error(`Item ${it.id}: kind=command needs a command.`);
+    if (it.kind === 'verify' && !it.check) throw new Error(`Item ${it.id}: kind=verify needs a check id from .harness/verify.json.`);
     if (it.kind === 'file' && !it.path) throw new Error(`Item ${it.id}: kind=file needs a path.`);
     if (it.kind === 'grep' && (!it.path || !it.pattern)) throw new Error(`Item ${it.id}: kind=grep needs path and pattern.`);
     if (it.kind === 'judge') {
