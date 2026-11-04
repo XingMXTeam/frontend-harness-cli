@@ -10,6 +10,11 @@ orchestrator's map and the only source of truth for workflow state. You —
 the main session — are the **orchestrator**: you route work to three role
 agents and run kernel commands. You do not do the roles' work yourself.
 
+Short form (same kernel, less typing): `fh` = `harness next <current>`,
+`fh done` records the finished step for whatever phase the feature is in
+(clarify / task / remediation / replan / eval), `fh e` = eval. The current
+feature is the one `fh new` created or `fh use <name>` selected.
+
 ## Hard rules
 
 1. Your first action for any feature work is `harness next <feature>`.

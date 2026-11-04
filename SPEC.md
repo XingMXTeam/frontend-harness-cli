@@ -139,6 +139,16 @@ v1.0, not a launch-day claim.
 
 ## Changelog
 
+- v0.10.0 — Ergonomics, no kernel changes. `fh` binary alias; short aliases
+  (n/s/e/p/r/g/c/v); a remembered current feature (`.harness/current`, set by
+  `new`, switched by `use`) so `<feature>` is optional; `fh done` routes to
+  clarify-done / task-done / remediate-done / replan-done / eval from state and
+  defaults `--sha` to HEAD only when HEAD is a commit not yet recorded and newer
+  than the clarify baseline (`state.baseSha`); bare `fh` = next. `init` detects
+  stack, host and gate commands (project scripts + package manager), registers
+  the SessionStart hook in `.claude/settings.json`, and upserts a marked
+  protocol block in CLAUDE.md / AGENTS.md (`--no-wire` opts out).
+
 - v0.9.0 — PRD import. `harness new <f> --prd <file>` copies a finished
   PRD verbatim into the feature dir, seeds `rubric.json` requirements
   from its `REQ-n` numbering, and records `prd.source: "imported"` in
