@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -111,4 +111,47 @@ test('bare fh outside a harness repo prints the short help', () => {
   assert.equal(r.status, 0);
   assert.match(r.stdout, /fh done/);
   assert.ok(!existsSync(path.join(dir, '.harness')));
+});
+
+// ─── monorepo stack detection ────────────────────────────────────────────────
+function sub(dir, rel, pkg) {
+  mkdirSync(path.join(dir, rel), { recursive: true });
+  writeFileSync(path.join(dir, rel, 'package.json'), JSON.stringify(pkg));
+}
+
+test('monorepo: next in a workspace package (package.json workspaces) → nextjs', () => {
+  const dir = repo({ name: 'root', private: true, workspaces: ['apps/*', 'packages/*'], devDependencies: { turbo: '2' } });
+  sub(dir, 'apps/web', { dependencies: { next: '15', react: '19' } });
+  sub(dir, 'packages/ui', { dependencies: { react: '19' } });
+  const d = detectStack(dir);
+  assert.equal(d.stack, 'nextjs');
+  assert.match(d.why, /apps\/web\/package\.json/);
+  assert.match(d.why, /react@packages\/ui/);
+  const r = fh(dir, 'init', '--host', 'generic');
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(readFileSync(path.join(dir, 'harness.config.json'), 'utf8')).stack, 'nextjs');
+});
+
+test('monorepo: pnpm-workspace.yaml and yarn {packages} forms', () => {
+  const a = repo({ name: 'root', private: true });
+  writeFileSync(path.join(a, 'pnpm-workspace.yaml'), "packages:\n  - 'apps/*'\n  - \"!apps/legacy\"\nonlyBuiltDependencies:\n  - esbuild\n");
+  sub(a, 'apps/site', { dependencies: { nuxt: '3' } });
+  assert.equal(detectStack(a).stack, 'vue');
+  const b = repo({ name: 'root', private: true, workspaces: { packages: ['web'] } });
+  sub(b, 'web', { devDependencies: { next: '14' } });
+  assert.equal(detectStack(b).stack, 'nextjs');
+});
+
+test('monorepo: undeclared apps/* fallback, root framework wins, plain node stays node', () => {
+  const a = repo({ name: 'root', private: true });
+  sub(a, 'apps/web', { dependencies: { next: '15' } });
+  assert.equal(detectStack(a).stack, 'nextjs');
+  const b = repo({ dependencies: { vue: '3' }, workspaces: ['apps/*'] });
+  sub(b, 'apps/web', { dependencies: { next: '15' } });
+  assert.equal(detectStack(b).stack, 'vue');
+  const c = repo({ name: 'cli', workspaces: ['packages/*'] });
+  sub(c, 'packages/core', { dependencies: { commander: '12' } });
+  const d = detectStack(c);
+  assert.equal(d.stack, 'node');
+  assert.match(d.why, /1 workspace package/);
 });

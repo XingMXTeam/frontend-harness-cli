@@ -90,14 +90,98 @@ function readPkg(root) {
   try { return JSON.parse(readFileSync(f, 'utf8')); } catch { return null; }
 }
 
+const STACK_RANK = { nextjs: 3, vue: 2, react: 1, node: 0 };
+
+function stackOfPkg(pkg) {
+  if (!pkg) return null;
+  const deps = { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies };
+  if (deps.next) return { stack: 'nextjs', dep: 'next' };
+  if (deps.vue || deps.nuxt) return { stack: 'vue', dep: deps.nuxt ? 'nuxt' : 'vue' };
+  if (deps.react) return { stack: 'react', dep: 'react' };
+  return null;
+}
+
+/** Workspace globs from package.json "workspaces" and pnpm-workspace.yaml. */
+export function workspaceGlobs(root, pkg = readPkg(root)) {
+  const globs = [];
+  const ws = pkg?.workspaces;
+  if (Array.isArray(ws)) globs.push(...ws);
+  else if (Array.isArray(ws?.packages)) globs.push(...ws.packages);
+  const pnpm = path.join(root, 'pnpm-workspace.yaml');
+  if (existsSync(pnpm)) {
+    let inPackages = false;
+    for (const line of readFileSync(pnpm, 'utf8').split(/\r?\n/)) {
+      if (/^packages\s*:/.test(line)) { inPackages = true; continue; }
+      if (inPackages) {
+        const m = line.match(/^\s*-\s*['"]?([^'"#]+?)['"]?\s*(#.*)?$/);
+        if (m) globs.push(m[1].trim());
+        else if (/^\S/.test(line)) inPackages = false;
+      }
+    }
+  }
+  return globs.filter((g) => g && !g.startsWith('!'));
+}
+
+const SKIP_DIRS = new Set(['node_modules', '.git', '.harness', 'dist', 'build', '.next']);
+
+function subdirs(dir) {
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && !SKIP_DIRS.has(d.name) && !d.name.startsWith('.'))
+      .map((d) => path.join(dir, d.name));
+  } catch { return []; }
+}
+
+/** Expand simple workspace globs ("apps/*", "packages/**", "web") to package dirs. */
+function expandGlob(root, glob) {
+  const parts = glob.replace(/\/+$/, '').split('/');
+  let dirs = [root];
+  for (const part of parts) {
+    const next = [];
+    for (const d of dirs) {
+      if (part === '**') {
+        const stack = [d];
+        while (stack.length) { const cur = stack.pop(); next.push(cur); if (path.relative(root, cur).split(path.sep).length < 4) stack.push(...subdirs(cur)); }
+      } else if (part.includes('*')) {
+        const re = new RegExp(`^${part.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`);
+        next.push(...subdirs(d).filter((s) => re.test(path.basename(s))));
+      } else next.push(path.join(d, part));
+    }
+    dirs = next;
+  }
+  return dirs.filter((d) => existsSync(path.join(d, 'package.json')));
+}
+
 export function detectStack(root) {
   const pkg = readPkg(root);
+  const own = stackOfPkg(pkg);
+  if (own) return { stack: own.stack, why: `${own.dep} in package.json` };
+
+  // Monorepo: the framework usually lives in a sub-package, not the root.
+  let globs = workspaceGlobs(root, pkg);
+  const declared = globs.length > 0;
+  if (!declared) globs = ['apps/*', 'packages/*'];
+  const seen = new Set();
+  let best = null;
+  const found = [];
+  for (const g of globs) {
+    for (const dir of expandGlob(root, g)) {
+      if (seen.has(dir)) continue;
+      seen.add(dir);
+      const hit = stackOfPkg(readPkg(dir));
+      if (!hit) continue;
+      const rel = path.relative(root, dir).split(path.sep).join('/');
+      found.push(`${hit.stack}@${rel}`);
+      if (!best || STACK_RANK[hit.stack] > STACK_RANK[best.stack]) best = { ...hit, rel };
+    }
+  }
+  if (best) {
+    const others = found.filter((f) => f !== `${best.stack}@${best.rel}`);
+    const more = others.length ? `; also ${others.slice(0, 3).join(', ')}${others.length > 3 ? ', …' : ''}` : '';
+    return { stack: best.stack, why: `${best.dep} in ${best.rel}/package.json (monorepo${declared ? '' : ', apps/* or packages/*'})${more}` };
+  }
   if (!pkg) return { stack: 'node', why: 'no package.json' };
-  const deps = { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies };
-  if (deps.next) return { stack: 'nextjs', why: 'next in package.json' };
-  if (deps.vue || deps.nuxt) return { stack: 'vue', why: `${deps.nuxt ? 'nuxt' : 'vue'} in package.json` };
-  if (deps.react) return { stack: 'react', why: 'react in package.json' };
-  return { stack: 'node', why: 'no next/vue/react dependency' };
+  return { stack: 'node', why: seen.size ? `no next/vue/react in root or ${seen.size} workspace package(s)` : 'no next/vue/react dependency' };
 }
 
 export function detectHost(root, env = process.env) {
